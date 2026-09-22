@@ -1,4 +1,7 @@
 .git
+target
+.idea
+.vscode
 uploads
 *.log
 *.tmp

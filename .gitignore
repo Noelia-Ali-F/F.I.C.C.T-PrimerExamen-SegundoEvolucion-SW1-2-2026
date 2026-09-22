@@ -7,6 +7,7 @@
 .env
 .env.*
 !.env.example
+!.env.aws.example
 *.local.env
 *.secret
 *.secrets
@@ -68,6 +69,7 @@ reports/
 # Local backups and database exports never belong in Git history
 backups/
 backup/
+backup-before-*/
 *.dump
 *.backup
 *.sql.gz
