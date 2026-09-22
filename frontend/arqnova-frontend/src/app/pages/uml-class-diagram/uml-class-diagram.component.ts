@@ -410,7 +410,30 @@ export class UmlClassDiagramComponent implements OnDestroy {
     if (this.collaborativeSession()) this.collaborationModal.set(true);
     else this.shareModal.set(true);
   }
-  copyInvitation() { const link=this.invitationLink(); navigator.clipboard?.writeText(link); this.showNotice('success','Enlace de invitación copiado.'); }
+  async copyInvitation() {
+    const link = this.invitationLink();
+    if (!link) return this.showNotice('error', 'No existe un enlace de invitación para copiar.');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API no disponible');
+      await navigator.clipboard.writeText(link);
+      this.showNotice('success', 'Enlace de invitación copiado.');
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = link;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      let copied = false;
+      try { copied = document.execCommand('copy'); } catch { copied = false; }
+      textarea.remove();
+      this.showNotice(copied ? 'success' : 'error', copied
+        ? 'Enlace de invitación copiado.'
+        : 'No se pudo copiar automáticamente. Selecciona el enlace y cópialo manualmente.');
+    }
+  }
   invitationLink() { const session=this.collaborativeSession(); return session ? `${window.location.origin}/diagrama-clases/${session.projectId}?invite=${session.inviteCode}` : ''; }
   leaveCollaboration() { this.releaseOwnedLocks(); this.collaboration.disconnect(); this.collaborativeSession.set(null); this.participants.set([]); this.remoteActions.set({}); this.remoteCursors.set({}); this.elementLocks.set({}); }
   remoteAction(elementId:string){return this.remoteActions()[elementId];}

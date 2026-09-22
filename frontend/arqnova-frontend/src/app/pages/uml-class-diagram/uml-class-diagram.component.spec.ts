@@ -54,6 +54,19 @@ describe('UmlClassDiagramComponent', () => {
     expect(component.generatedBackend()).toBeNull();
   });
 
+  it('copia el enlace colaborativo usando el respaldo compatible con HTTP', async () => {
+    component.collaborativeSession.set({ sessionId: 's1', projectId: 'project-test', projectName: 'Prueba', inviteCode: 'ABC123', model: component.model() });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('Contexto no seguro')) } });
+    const copy = vi.fn(() => true);
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: copy });
+
+    await component.copyInvitation();
+
+    expect(copy).toHaveBeenCalledWith('copy');
+    expect(component.notice()).toEqual({ kind: 'success', text: 'Enlace de invitación copiado.' });
+    expect(document.querySelector('textarea')).toBeNull();
+  });
+
   it('crea una clase y la selecciona', () => {
     component.newClassName = 'Usuario';
     component.addClass();
