@@ -1,0 +1,66 @@
+<div class="login-wrapper">
+  <div class="login-background">
+    <div class="bg-shape shape-1"></div>
+    <div class="bg-shape shape-2"></div>
+  </div>
+
+  <div class="wf-card login-card animate-fade-in">
+    <div class="login-header">
+      <div class="login-brand">
+        <div class="brand-mark">AN</div>
+        <div class="brand-text">
+          <span class="name">ArqNova</span>
+          <span class="tag">PLATAFORMA UML</span>
+        </div>
+      </div>
+      <h2 class="login-title">Iniciar sesión</h2>
+      <p class="login-subtitle">Acceso seguro para Administradores y Usuarios/Colaboradores de ArqNova.</p>
+    </div>
+
+    <form (submit)="onSubmit(); $event.preventDefault()" class="login-form">
+      <div class="form-group">
+        <label>Correo electrónico o usuario</label>
+        <div class="input-wrapper">
+          <mat-icon fontSet="material-symbols-rounded">person</mat-icon>
+          <input type="text" inputmode="email" autocomplete="username" [formField]="loginForm.username" placeholder="ejemplo@correo.com" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Contraseña</label>
+        <div class="input-wrapper">
+          <mat-icon fontSet="material-symbols-rounded">lock</mat-icon>
+          <input [type]="showPassword() ? 'text' : 'password'" autocomplete="current-password" [formField]="loginForm.password" placeholder="••••••••" />
+          <button class="password-toggle" type="button" (click)="showPassword.set(!showPassword())" [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"><mat-icon fontSet="material-symbols-rounded">{{showPassword() ? 'visibility_off' : 'visibility'}}</mat-icon></button>
+        </div>
+      </div>
+
+      <button type="button" class="text-link forgot-link" (click)="showRecoveryPending()">¿Olvidaste tu contraseña?</button>
+
+      @if (successMsg) {<div class="success-alert"><mat-icon fontSet="material-symbols-rounded">check_circle</mat-icon><span>{{successMsg}}</span></div>}
+
+      @if (errorMsg) {
+        <div class="error-alert">
+          <mat-icon fontSet="material-symbols-rounded">error_outline</mat-icon>
+          <span>{{ errorMsg }}</span>
+        </div>
+      }
+
+      <button type="submit" [disabled]="loginForm().invalid() || isSubmitting" class="login-submit-btn">
+        @if(isSubmitting) {
+          <div class="spinner-small"></div>
+          <span>Iniciando sesión...</span>
+        } @else {
+          <span>Iniciar sesión</span>
+          <mat-icon fontSet="material-symbols-rounded">arrow_forward</mat-icon>
+        }
+      </button>
+    </form>
+
+    <p class="account-link">¿No tienes una cuenta? <a routerLink="/registro">Registrarse</a></p>
+
+    <div class="login-footer">
+      <p>&copy; 2026 ArqNova. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</div>

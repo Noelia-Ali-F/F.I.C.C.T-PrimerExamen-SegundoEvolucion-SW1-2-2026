@@ -1,0 +1,336 @@
+{
+  "format": "uml-class-diagram",
+  "version": 1,
+  "title": "Modelo conceptual de ArqNova",
+  "classes": [
+    {
+      "id": "usuario",
+      "name": "Usuario",
+      "stereotype": "Entidad",
+      "x": 70,
+      "y": 70,
+      "color": "#294493",
+      "attributes": [
+        "idUsuario: UUID",
+        "nombre: String",
+        "correo: String",
+        "contraseña: String",
+        "rol: RolUsuario"
+      ],
+      "responsibilities": ["Representa al Administrador o Usuario/Colaborador de ArqNova"]
+    },
+    {
+      "id": "proyecto-uml",
+      "name": "ProyectoUML",
+      "stereotype": "Entidad",
+      "x": 390,
+      "y": 70,
+      "color": "#294493",
+      "attributes": [
+        "idProyecto: UUID",
+        "nombre: String",
+        "descripcion: String",
+        "fechaCreacion: DateTime",
+        "estado: EstadoProyecto"
+      ],
+      "responsibilities": ["Agrupa los diagramas UML administrados y compartidos por los usuarios"]
+    },
+    {
+      "id": "diagrama-clase",
+      "name": "DiagramaClase",
+      "stereotype": "Entidad",
+      "x": 710,
+      "y": 70,
+      "color": "#294493",
+      "attributes": [
+        "idDiagrama: UUID",
+        "nombre: String",
+        "version: Integer",
+        "fechaActualizacion: DateTime"
+      ],
+      "responsibilities": ["Conserva el modelo de clases editable y su versión persistida"]
+    },
+    {
+      "id": "sesion-colaborativa",
+      "name": "SesionColaborativa",
+      "stereotype": "Entidad",
+      "x": 1030,
+      "y": 70,
+      "color": "#7c3aed",
+      "attributes": [
+        "idSesion: UUID",
+        "fechaInicio: DateTime",
+        "estado: EstadoSesion"
+      ],
+      "responsibilities": ["Coordina participantes, sincronización y bloqueos de edición"]
+    },
+    {
+      "id": "clase-uml",
+      "name": "ClaseUML",
+      "stereotype": "Elemento UML",
+      "x": 70,
+      "y": 390,
+      "color": "#2563eb",
+      "attributes": [
+        "idClase: UUID",
+        "nombre: String",
+        "tipo: String"
+      ],
+      "responsibilities": ["Representa una clase editable dentro del diagrama"]
+    },
+    {
+      "id": "atributo-uml",
+      "name": "AtributoUML",
+      "stereotype": "Elemento UML",
+      "x": 390,
+      "y": 390,
+      "color": "#2563eb",
+      "attributes": [
+        "idAtributo: UUID",
+        "nombre: String",
+        "tipo: String"
+      ],
+      "responsibilities": ["Define una propiedad tipada de una clase UML"]
+    },
+    {
+      "id": "metodo-uml",
+      "name": "MetodoUML",
+      "stereotype": "Elemento UML",
+      "x": 710,
+      "y": 390,
+      "color": "#2563eb",
+      "attributes": [
+        "idMetodo: UUID",
+        "nombre: String",
+        "retorno: String"
+      ],
+      "responsibilities": ["Define una operación de una clase UML"]
+    },
+    {
+      "id": "relacion-uml",
+      "name": "RelacionUML",
+      "stereotype": "Elemento UML",
+      "x": 1030,
+      "y": 390,
+      "color": "#2563eb",
+      "attributes": [
+        "idRelacion: UUID",
+        "tipo: TipoRelacion"
+      ],
+      "responsibilities": ["Conecta clases mediante IDs internos y multiplicidades"]
+    },
+    {
+      "id": "actividad-bitacora",
+      "name": "ActividadBitacora",
+      "stereotype": "Entidad",
+      "x": 70,
+      "y": 690,
+      "color": "#475569",
+      "attributes": [
+        "idActividad: UUID",
+        "accion: String",
+        "fecha: DateTime"
+      ],
+      "responsibilities": ["Registra actividad relevante de modelado y colaboración"]
+    },
+    {
+      "id": "modelo-ia",
+      "name": "ModeloIA",
+      "stereotype": "Resultado IA",
+      "x": 390,
+      "y": 690,
+      "color": "#7c3aed",
+      "attributes": [
+        "idModelo: UUID",
+        "tipo: String",
+        "resultado: String"
+      ],
+      "responsibilities": ["Representa una interpretación o reconstrucción UML asistida por IA"]
+    },
+    {
+      "id": "modelo-xmi",
+      "name": "ModeloXMI",
+      "stereotype": "Intercambio",
+      "x": 710,
+      "y": 690,
+      "color": "#0369a1",
+      "attributes": [
+        "idModeloXMI: UUID",
+        "formato: String",
+        "contenido: String"
+      ],
+      "responsibilities": ["Representa la interoperabilidad XMI con Enterprise Architect"]
+    },
+    {
+      "id": "backend-generado",
+      "name": "BackendGenerado",
+      "stereotype": "Artefacto generado",
+      "x": 1030,
+      "y": 690,
+      "color": "#0f766e",
+      "attributes": [
+        "idBackend: UUID",
+        "tecnologia: String",
+        "fechaGeneracion: DateTime"
+      ],
+      "responsibilities": ["Representa el proyecto Spring Boot generado desde el diagrama"]
+    },
+    {
+      "id": "coleccion-postman",
+      "name": "ColeccionPostman",
+      "stereotype": "Artefacto generado",
+      "x": 390,
+      "y": 990,
+      "color": "#b45309",
+      "attributes": [
+        "idColeccion: UUID",
+        "nombre: String",
+        "fechaGeneracion: DateTime"
+      ],
+      "responsibilities": ["Agrupa las solicitudes de prueba de los controladores generados"]
+    },
+    {
+      "id": "operacion-offline",
+      "name": "OperacionOffline",
+      "stereotype": "Entidad móvil",
+      "x": 710,
+      "y": 990,
+      "color": "#be123c",
+      "attributes": [
+        "idOperacion: UUID",
+        "entidad: String",
+        "accion: String",
+        "estado: EstadoOperacion"
+      ],
+      "responsibilities": ["Conserva una operación móvil pendiente de sincronización"]
+    }
+  ],
+  "relations": [
+    {
+      "id": "rel-usuario-administra-proyecto",
+      "sourceId": "usuario",
+      "targetId": "proyecto-uml",
+      "type": "association",
+      "label": "administra",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-usuario-participa-proyecto",
+      "sourceId": "usuario",
+      "targetId": "proyecto-uml",
+      "type": "association",
+      "label": "participa",
+      "sourceMultiplicity": "0..*",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-proyecto-contiene-diagrama",
+      "sourceId": "proyecto-uml",
+      "targetId": "diagrama-clase",
+      "type": "composition",
+      "label": "contiene",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "1..*"
+    },
+    {
+      "id": "rel-diagrama-contiene-clase",
+      "sourceId": "diagrama-clase",
+      "targetId": "clase-uml",
+      "type": "composition",
+      "label": "contiene",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-clase-posee-atributo",
+      "sourceId": "clase-uml",
+      "targetId": "atributo-uml",
+      "type": "composition",
+      "label": "posee",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-clase-posee-metodo",
+      "sourceId": "clase-uml",
+      "targetId": "metodo-uml",
+      "type": "composition",
+      "label": "posee",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-clase-tiene-relacion",
+      "sourceId": "clase-uml",
+      "targetId": "relacion-uml",
+      "type": "association",
+      "label": "tiene",
+      "sourceMultiplicity": "1..*",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-usuario-participa-sesion",
+      "sourceId": "usuario",
+      "targetId": "sesion-colaborativa",
+      "type": "association",
+      "label": "participa",
+      "sourceMultiplicity": "1..*",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-proyecto-registra-actividad",
+      "sourceId": "proyecto-uml",
+      "targetId": "actividad-bitacora",
+      "type": "composition",
+      "label": "registra",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-diagrama-genera-modelo-ia",
+      "sourceId": "diagrama-clase",
+      "targetId": "modelo-ia",
+      "type": "association",
+      "label": "puede generar",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-diagrama-intercambia-xmi",
+      "sourceId": "diagrama-clase",
+      "targetId": "modelo-xmi",
+      "type": "association",
+      "label": "importa/exporta",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-diagrama-genera-backend",
+      "sourceId": "diagrama-clase",
+      "targetId": "backend-generado",
+      "type": "association",
+      "label": "genera",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    },
+    {
+      "id": "rel-backend-incluye-postman",
+      "sourceId": "backend-generado",
+      "targetId": "coleccion-postman",
+      "type": "composition",
+      "label": "incluye",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "1"
+    },
+    {
+      "id": "rel-usuario-registra-operacion-offline",
+      "sourceId": "usuario",
+      "targetId": "operacion-offline",
+      "type": "association",
+      "label": "registra desde móvil",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "0..*"
+    }
+  ]
+}

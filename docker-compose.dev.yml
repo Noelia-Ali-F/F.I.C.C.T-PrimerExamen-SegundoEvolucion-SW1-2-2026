@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: arqnova-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${POSTGRES_PUBLIC_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: maven:3.9.9-eclipse-temurin-17
+    container_name: arqnova-backend
+    working_dir: /workspace
+    command: mvn spring-boot:run -Dspring-boot.run.profiles=dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      PORT: 8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      CORS_ALLOWED_ORIGINS: http://localhost:8081,http://127.0.0.1:8081
+    ports:
+      - "${BACKEND_PUBLIC_PORT:-8080}:8080"
+    volumes:
+      - ./backend/software-parcial-backend-main:/workspace
+      - maven_cache:/root/.m2
+      - backend_uploads:/app/uploads
+
+  frontend:
+    image: node:20-alpine
+    container_name: arqnova-frontend
+    working_dir: /workspace
+    command: sh -c "npm ci --legacy-peer-deps && npm start -- --host 0.0.0.0 --port 8080 --poll 1000"
+    depends_on:
+      - backend
+    environment:
+      API_URL: http://localhost:8080
+    ports:
+      - "${FRONTEND_PUBLIC_PORT:-8081}:8080"
+    volumes:
+      - ./frontend/arqnova-frontend:/workspace
+      - frontend_node_modules:/workspace/node_modules
+
+volumes:
+  postgres_data:
+  backend_uploads:
+  maven_cache:
+  frontend_node_modules:

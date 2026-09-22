@@ -1,0 +1,38 @@
+.backend-toolbar-button { border-color:#cbd5e1; background:#f8fafc; color:#172554; }
+.backend-toolbar-button:hover { background:#172554; border-color:#172554; color:#fff; }
+.backend-modal { width:min(570px,calc(100vw - 32px)); max-height:calc(100vh - 40px); overflow:auto; background:#fff; border-radius:15px; padding:24px; box-shadow:0 24px 70px #0003; }
+.backend-modal > header { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; margin-bottom:18px; }
+.backend-modal > header > span { width:43px; height:43px; border-radius:12px; background:#e8eefc; color:#1e3a8a; display:grid; place-items:center; }
+.backend-modal h2 { margin:0; color:#172554; font-size:19px; }
+.backend-modal header p { margin:3px 0 0; color:#667085; font-size:11px; }
+.backend-modal header button { width:32px; height:32px; border:0; border-radius:8px; background:#f2f4f7; color:#667085; display:grid; place-items:center; }
+.backend-modal > label { display:block; margin-top:13px; color:#5e6a7e; font-size:11px; font-weight:700; }
+.backend-modal > label input { width:100%; height:34px; margin-top:5px; padding:0 9px; border:1px solid #d5dce6; border-radius:7px; }
+.backend-info { display:flex; align-items:flex-start; gap:9px; padding:12px; border:1px solid #bfdbfe; border-radius:9px; background:#eff6ff; color:#1e3a8a; }
+.backend-info p { margin:0; font-size:11px; line-height:1.5; }
+.backend-check { display:flex!important; align-items:center; gap:8px; color:#344054!important; }
+.backend-check input { width:16px!important; height:16px!important; margin:0!important; accent-color:#1e3a8a; }
+.backend-modal footer { display:flex; justify-content:flex-end; gap:9px; margin-top:20px; }
+.backend-primary { min-height:38px; border:0; border-radius:8px; background:#1e3a8a; color:#fff; padding:0 16px; display:inline-flex; align-items:center; justify-content:center; gap:7px; font-size:11px; font-weight:800; }
+.backend-primary:disabled { opacity:.55; cursor:not-allowed; }
+.backend-progress { margin-top:18px; padding:13px; border-radius:9px; background:#f8fafc; }
+.backend-progress strong,.backend-progress small { display:block; font-size:11px; }
+.backend-progress small { margin-top:6px; color:#667085; }
+.backend-progress > div { height:8px; margin-top:9px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+.backend-progress span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#1e3a8a,#2563eb); transition:width .3s; }
+.backend-success { text-align:center; padding:10px; }
+.backend-success > mat-icon { width:55px!important; height:55px!important; font-size:55px!important; color:#1e3a8a; }
+.backend-success h3 { margin:10px 0 5px; color:#172554; font-size:18px; }
+.backend-success p { margin:0; color:#667085; font-size:11px; }
+.backend-success ul { max-width:330px; margin:18px auto 0; padding:14px 25px; text-align:left; border-radius:9px; background:#eff6ff; color:#1e3a8a; font-size:11px; line-height:1.9; }
+.invalid-attribute-type { background:#fffbeb; }
+.invalid-attribute-type small { color:#b45309!important; }
+.invalid-attribute-type small mat-icon { width:12px!important; height:12px!important; font-size:12px!important; vertical-align:middle; }
+.attribute-type-warning { display:flex; align-items:flex-start; gap:5px; padding:7px; border:1px solid #fde68a; border-radius:7px; background:#fffbeb; color:#92400e; font-size:9px; line-height:1.4; }
+.attribute-type-warning mat-icon { width:15px!important; height:15px!important; font-size:15px!important; flex:none; }
+.postman-resource { margin-top:16px; padding:14px; border:1px solid #c7d2fe; border-radius:10px; background:#f8faff; }
+.postman-resource>div:first-child { display:flex; align-items:center; gap:9px; color:#172554; }
+.postman-resource span strong,.postman-resource span small { display:block; }
+.postman-resource span small { margin-top:3px; color:#667085; font-size:9px; }
+.postman-resource p { color:#475467; font-size:10px; }
+.postman-button { width:100%; height:37px; margin-top:11px; border:1px solid #1e3a8a; border-radius:8px; background:#fff; color:#1e3a8a; display:flex; align-items:center; justify-content:center; gap:7px; font-size:11px; font-weight:800; }

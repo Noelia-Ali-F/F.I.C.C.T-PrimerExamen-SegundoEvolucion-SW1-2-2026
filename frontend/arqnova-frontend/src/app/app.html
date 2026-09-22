@@ -1,0 +1,91 @@
+<div class="app-shell relative min-h-screen flex overflow-hidden text-slate-900 selection:bg-blue-900/10">
+  @if (authService.currentUser(); as user) {
+    @if (isStandaloneRoute()) {
+      <main class="guest-shell w-full"><router-outlet /></main>
+    } @else {
+      <aside class="app-sidebar" [class.is-compact]="sidebarCompact()" [class.is-open]="sidebarOpen()">
+        <div class="sidebar-header">
+          <div class="sidebar-brand" routerLink="/proyectos">
+            <div class="brand-mark"><span>AN</span></div>
+            <div class="brand-info">
+              <span class="brand-name">ArqNova</span>
+              <span class="brand-tag">PLATAFORMA UML</span>
+            </div>
+          </div>
+          <button class="sidebar-toggle-btn" (click)="isDesktopLayout() ? toggleSidebarCompact() : closeSidebar()" aria-label="Alternar menú">
+            <mat-icon fontSet="material-symbols-rounded">{{ isDesktopLayout() ? (sidebarCompact() ? 'last_page' : 'first_page') : 'close' }}</mat-icon>
+          </button>
+        </div>
+
+        <nav class="sidebar-nav">
+          <div class="nav-section">
+            <span class="nav-section-title">Modelado UML</span>
+            @for (item of navItems(); track item.route) {
+              <a [routerLink]="item.route" class="sidebar-link" [class.is-active]="isRouteActive(item.route)" [title]="item.label">
+                <mat-icon class="sidebar-link-icon" fontSet="material-symbols-rounded">{{ item.icon }}</mat-icon>
+                <span class="sidebar-link-label">{{ item.label }}</span>
+              </a>
+            }
+          </div>
+          @if (authService.currentUser()?.rol === 'ADMINISTRADOR') {
+            <div class="nav-section">
+              <span class="nav-section-title">Administración</span>
+              <a routerLink="/usuarios" class="sidebar-link" [class.is-active]="isRouteActive('/usuarios')" title="Usuarios">
+                <mat-icon class="sidebar-link-icon" fontSet="material-symbols-rounded">group</mat-icon>
+                <span class="sidebar-link-label">Usuarios</span>
+              </a>
+            </div>
+          }
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="sidebar-profile-card" (click)="toggleProfileMenu()">
+            <div class="user-avatar">
+              @if (authService.getValidAvatar(user.avatarUrl); as avatarUrl) {
+                <img [src]="(avatarUrl.startsWith('http') || avatarUrl.startsWith('/icons/') ? avatarUrl : basePath + avatarUrl) + '?t=' + cacheBuster" [alt]="user.username" />
+              }
+            </div>
+            <div class="user-meta" [class.is-compact]="sidebarCompact()">
+              <span class="user-name">{{ user.nombreCompleto || user.username }}</span>
+              <span class="user-role">{{ visibleRole(user.rol) }}</span>
+            </div>
+            @if (!sidebarCompact()) {
+              <mat-icon class="profile-arrow" fontSet="material-symbols-rounded">expand_more</mat-icon>
+            }
+            @if (profileMenuOpen()) {
+              <div class="premium-dropdown animate-fade-in" (click)="$event.stopPropagation()">
+                <div class="dropdown-header"><p class="dropdown-username">{{ user.username }}</p></div>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-btn logout" (click)="logout()">
+                  <mat-icon fontSet="material-symbols-rounded">logout</mat-icon>
+                  <span>Cerrar sesión</span>
+                </button>
+              </div>
+            }
+          </div>
+        </div>
+      </aside>
+
+      <div class="main-container">
+        <header class="app-global-header">
+          <div class="header-left">
+            @if (!sidebarOpen() && !isDesktopLayout()) {
+              <button class="mobile-sidebar-toggle-btn" (click)="toggleSidebar()" aria-label="Abrir menú">
+                <mat-icon fontSet="material-symbols-rounded">menu</mat-icon>
+              </button>
+            }
+            <h1 class="header-route-title"><span>{{ currentRouteTitle() }}</span></h1>
+          </div>
+        </header>
+        <main class="content-wrapper">
+          @if (sidebarOpen() && !isDesktopLayout()) {
+            <div class="mobile-sidebar-overlay" (click)="closeSidebar()"></div>
+          }
+          <div class="page-container"><router-outlet /></div>
+        </main>
+      </div>
+    }
+  } @else {
+    <main class="guest-shell w-full"><router-outlet /></main>
+  }
+</div>

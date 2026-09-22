@@ -1,0 +1,149 @@
+# ================================================================
+# ArqNova — reglas globales del monorepo
+# Backend Spring Boot · Frontend Angular · Mobile Flutter · Docker
+# ================================================================
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.local.env
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*service-account*.json
+
+# Operating system and editors
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.history/
+
+# Local AI/editor tooling
+.codex/
+.agents/
+.cursor/
+.gemini/
+
+# Logs, reports, caches and temporary files
+*.log
+logs/
+log/
+tmp/
+temp/
+.tmp/
+.cache/
+coverage/
+reports/
+*.tmp
+*.temp
+*.pid
+*.seed
+*.stackdump
+
+# Generated archives and local exports
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+*.archive
+*.apk
+*.aab
+*.ipa
+
+# Local backups and database exports never belong in Git history
+backups/
+backup/
+*.dump
+*.backup
+*.sql.gz
+
+# Java / Maven / Spring Boot
+**/target/
+**/*.class
+**/.classpath
+**/.project
+**/.settings/
+**/.factorypath
+**/dependency-reduced-pom.xml
+**/hs_err_pid*
+**/replay_pid*
+
+# Backend runtime data
+backend/**/uploads/
+backend/**/training/output/
+backend/**/application-local.yml
+backend/**/application-local.yaml
+backend/**/application-local.properties
+
+# Node.js / Angular
+**/node_modules/
+frontend/**/dist/
+frontend/**/.angular/
+frontend/**/.sass-cache/
+frontend/**/.eslintcache
+frontend/**/.parcel-cache/
+frontend/**/.nx/
+frontend/**/.turbo/
+frontend/**/out-tsc/
+frontend/**/browser-downloads/
+frontend/**/npm-debug.log*
+frontend/**/yarn-debug.log*
+frontend/**/yarn-error.log*
+frontend/**/pnpm-debug.log*
+
+# Flutter / Dart
+mobile/**/.dart_tool/
+mobile/**/.pub/
+mobile/**/.pub-cache/
+mobile/**/.flutter-plugins
+mobile/**/.flutter-plugins-dependencies
+mobile/**/.packages
+mobile/**/build/
+mobile/**/doc/api/
+mobile/**/.fvm/flutter_sdk/
+mobile/**/android/.gradle/
+mobile/**/android/local.properties
+mobile/**/android/key.properties
+mobile/**/android/app/debug/
+mobile/**/android/app/profile/
+mobile/**/android/app/release/
+mobile/**/ios/Flutter/.last_build_id
+mobile/**/ios/Flutter/ephemeral/
+mobile/**/macos/Flutter/ephemeral/
+mobile/**/*.symbols
+mobile/**/*.map.json
+
+# Test and tooling outputs
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/.pytest_cache/
+**/__pycache__/
+**/*.py[cod]
+
+# Local database and container data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+docker-data/
+.docker-data/
+
+# Local generated validation folders
+.tmp-cu*/
+cu*-generated*/
