@@ -1,0 +1,13 @@
+http://18.116.164.204, http://ec2-18-116-164-204.us-east-2.compute.amazonaws.com {
+    redir https://{$ARQNOVA_DOMAIN}{uri} permanent
+}
+
+{$ARQNOVA_DOMAIN} {
+    tls {
+        issuer acme {
+            disable_http_challenge
+        }
+    }
+
+    reverse_proxy frontend:8080
+}

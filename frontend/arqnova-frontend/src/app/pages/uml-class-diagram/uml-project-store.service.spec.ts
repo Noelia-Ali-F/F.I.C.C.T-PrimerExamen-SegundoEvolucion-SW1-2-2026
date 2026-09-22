@@ -69,6 +69,18 @@ describe('UmlProjectStoreService PostgreSQL', () => {
     expect((await promise).filter(project=>project.id===legacy.id)).toHaveLength(1);
   });
 
+  it('elimina de la cache un proyecto remoto borrado por otro usuario y no lo recrea',async()=>{
+    const stale:UmlProject={...dto('hospital','hospital'),status:'EN_EDICION',owner:'Alison',memberRole:'EDITOR',model:DEFAULT_UML_MODEL,modelVersion:2};
+    localStorage.setItem('uml-projects-v1',JSON.stringify([stale]));
+
+    const promise=firstValueFrom(store.list());
+    const list=http.expectOne(api);expect(list.request.method).toBe('GET');list.flush({datos:[]});
+
+    expect(await promise).toEqual([]);
+    expect(store.cached('hospital')).toBeNull();
+    http.expectNone(api, 'un proyecto remoto eliminado no debe volver a enviarse mediante POST');
+  });
+
   it('guarda con un PUT y actualiza la versión desde datos',async()=>{
     localStorage.setItem('uml-projects-v1',JSON.stringify([{...dto('vet','Veterinaria'),model:DEFAULT_UML_MODEL,modelVersion:2}]));
     const promise=firstValueFrom(store.saveModel('vet',DEFAULT_UML_MODEL));

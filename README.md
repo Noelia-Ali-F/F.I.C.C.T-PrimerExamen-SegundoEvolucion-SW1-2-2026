@@ -221,6 +221,12 @@ docker-compose.dev.yml                   Entorno de desarrollo
 .env.aws.example                         Variables AWS de ejemplo
 ```
 
+## Documentación del examen
+
+- [Matriz de cumplimiento](docs/MATRIZ_CUMPLIMIENTO_EXAMEN.md).
+- [Estándares de programación](docs/ESTANDARES_DE_PROGRAMACION.md).
+- [Videotutoriales y guiones de demostración](docs/tutoriales/README.md).
+
 ## Ejecución con Docker
 
 Requisitos: Git, Docker Engine y Docker Compose v2.

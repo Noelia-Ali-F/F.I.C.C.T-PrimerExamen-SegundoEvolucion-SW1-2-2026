@@ -128,7 +128,32 @@ class GeminiUmlInterpreterTest {
         assertThat(schema.path("properties").path("status").path("enum").toString())
                 .isEqualTo("[\"READY\",\"CLARIFICATION\",\"ERROR\"]");
         assertThat(schema.path("properties").path("operations").path("items").path("properties")
-                .path("type").path("enum")).hasSize(9);
+                .path("type").path("enum")).hasSize(12);
+    }
+
+    @Test void interpretaConGeminiCrearEditarYEliminarMetodos() throws Exception {
+        String modelJson = """
+          {"status":"READY","operations":[
+            {"type":"METHOD_CREATE","target":{"className":"Usuario","attributeName":null,"methodName":"autenticar","sourceClassName":null,"targetClassName":null},"parameters":{"parameters":"correo: String, clave: String","returnType":"Boolean"}},
+            {"type":"METHOD_UPDATE","target":{"className":"Usuario","attributeName":null,"methodName":"autenticar","sourceClassName":null,"targetClassName":null},"parameters":{"name":"validarCredenciales","returnType":"Boolean"}},
+            {"type":"METHOD_DELETE","target":{"className":"Usuario","attributeName":null,"methodName":"validarCredenciales","sourceClassName":null,"targetClassName":null},"parameters":{}}
+          ],"clarificationQuestion":null,"message":"Métodos actualizados."}
+          """;
+        var current = Map.<String,Object>of("classes", List.of(Map.of(
+                "id","usuario","name","Usuario","attributes",List.of(),"methods",List.of())), "relations", List.of());
+
+        var result = configured(modelJson).interpret(new UmlAiCommandRequest(
+                "Agrega autenticar, renómbralo y elimínalo", current));
+
+        assertThat(result.getStatus()).isEqualTo("READY");
+        assertThat(result.getOperations()).extracting("type")
+                .containsExactly("METHOD_CREATE", "METHOD_UPDATE", "METHOD_DELETE");
+        assertThat(result.getOperations().get(0).getParameters())
+                .containsEntry("classId", "usuario")
+                .containsEntry("parameters", "correo: String, clave: String")
+                .containsEntry("returnType", "Boolean");
+        assertThat(result.getOperations().get(1).getParameters()).containsEntry("name", "validarCredenciales");
+        assertThat(result.getOperations().get(2).getParameters()).containsEntry("classId", "usuario");
     }
 
     @Test void rechazaAclaracionSinPregunta() throws Exception {
@@ -207,6 +232,58 @@ class GeminiUmlInterpreterTest {
         assertThat(attempts).hasValue(2);
         assertThat(Duration.ofNanos(System.nanoTime()-started).toMillis()).isLessThan(1_000L);
         assertThat(result.getInterpreter()).isEqualTo("GEMINI");
+    }
+
+    @Test void rotaAUnaSegundaClaveCuandoLaPrimeraAgotaCuota() throws Exception {
+        List<String> receivedKeys = new java.util.concurrent.CopyOnWriteArrayList<>();
+        String structured="""
+          {"status":"READY","operations":[{"type":"CLASS_CREATE","target":{"className":"Cliente","attributeName":null,"methodName":null,"sourceClassName":null,"targetClassName":null},"parameters":{}}],"clarificationQuestion":null,"message":"Clase creada."}
+          """;
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/models/gemini-3.8-flash:generateContent", exchange -> {
+            String key = exchange.getRequestHeaders().getFirst("x-goog-api-key");
+            receivedKeys.add(key);
+            if ("key-one".equals(key)) {
+                byte[] response = "{\"error\":{\"status\":\"RESOURCE_EXHAUSTED\"}}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(429, response.length);
+                exchange.getResponseBody().write(response);
+            } else {
+                byte[] response=mapper.writeValueAsBytes(Map.of("candidates",List.of(Map.of("content",Map.of("parts",List.of(Map.of("text",structured)))))));
+                exchange.sendResponseHeaders(200,response.length);
+                exchange.getResponseBody().write(response);
+            }
+            exchange.close();
+        });
+        server.start();
+        GeminiUmlInterpreter value = interpreter();
+        GeminiKeyManager keys = new GeminiKeyManager("key-one", "key-two", "", "");
+        value.setKeyManager(keys);
+
+        var result = value.interpret(new UmlAiCommandRequest("Crea Cliente", Map.of("classes",List.of(),"relations",List.of())));
+
+        assertThat(receivedKeys).containsExactly("key-one", "key-two");
+        assertThat(keys.activeIndex()).isEqualTo(1);
+        assertThat(result.getInterpreter()).isEqualTo("GEMINI");
+        assertThat(result.isFallbackUsed()).isFalse();
+        assertThat(mapper.writeValueAsString(result)).doesNotContain("key-one", "key-two");
+    }
+
+    @Test void noRotaClavesAnteUnErrorDeSolicitud() throws Exception {
+        List<String> receivedKeys = new java.util.concurrent.CopyOnWriteArrayList<>();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/models/gemini-3.8-flash:generateContent", exchange -> {
+            receivedKeys.add(exchange.getRequestHeaders().getFirst("x-goog-api-key"));
+            exchange.sendResponseHeaders(400, -1);
+            exchange.close();
+        });
+        server.start();
+        GeminiUmlInterpreter value = interpreter();
+        value.setKeyManager(new GeminiKeyManager("key-one", "key-two", "", ""));
+
+        org.junit.jupiter.api.Assertions.assertThrows(GeminiUmlInterpreter.ProviderException.class,
+                () -> value.interpret(new UmlAiCommandRequest("instrucción inválida", Map.of("classes",List.of(),"relations",List.of()))));
+
+        assertThat(receivedKeys).containsExactly("key-one");
     }
 
     @Test void validaReconocimientoVisualSinInventarReferencias() {

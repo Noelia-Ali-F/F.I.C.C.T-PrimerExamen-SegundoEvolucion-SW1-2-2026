@@ -46,6 +46,9 @@ app:
     allowed-origins: http://localhost:4200
   gemini:
     api-key: ${GEMINI_API_KEY:}
+    api-key-1: ${GEMINI_API_KEY_1:}
+    api-key-2: ${GEMINI_API_KEY_2:}
+    api-key-3: ${GEMINI_API_KEY_3:}
     model: ${GEMINI_MODEL:gemini-3.8-flash}
     base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
     timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:25}

@@ -20,7 +20,7 @@ interface AiHistoryItem { instruction: string; message: string; kind: 'success' 
   selector: 'app-uml-class-diagram', standalone: true,
   imports: [CommonModule, FormsModule, MatIconModule],
   templateUrl: './uml-class-diagram.component.html',
-  styleUrls: ['./uml-class-diagram.component.scss', './uml-backend-generator.scss']
+  styleUrls: ['./uml-class-diagram.component.scss', './uml-backend-generator.scss', './uml-toolbar-tooltips.scss']
 })
 export class UmlClassDiagramComponent implements OnDestroy {
   private readonly backendGenerator = inject(UmlBackendGeneratorService);
@@ -334,12 +334,16 @@ export class UmlClassDiagramComponent implements OnDestroy {
     const selected = this.selectedClass();
     const name = this.methodDraft.name.trim();
     if (!selected || !name) return this.showNotice('error', 'El nombre del método es obligatorio.');
+    if (!this.canEdit('class', selected.id)) {
+      if (this.collaborativeSession()) return this.requestLock('class', selected.id, () => this.saveMethod());
+      return this.lockBlocked('class', selected.id);
+    }
     const value = { id: this.editingMethodId ?? this.entityId('method'), name, parameters: this.methodDraft.parameters.trim(), returnType: this.methodDraft.returnType.trim() || 'void' };
     const methods = this.editingMethodId ? selected.methods.map(item => item.id === this.editingMethodId ? value : item) : [...selected.methods, value];
     this.updateSelectedClass({ methods }); this.cancelMethodEdit();
   }
-  editMethod(item: UmlMethod) { this.editingMethodId = item.id; this.methodDraft = { ...item }; }
-  deleteMethod(id: string) { const item = this.selectedClass(); if (item) this.updateSelectedClass({ methods: item.methods.filter(method => method.id !== id) }); }
+  editMethod(item: UmlMethod) { const selected=this.selectedClass();if(!selected)return;this.requestLock('class',selected.id,()=>{this.editingMethodId = item.id; this.methodDraft = { ...item };}); }
+  deleteMethod(id: string) { const item = this.selectedClass(); if (!item) return;this.requestLock('class',item.id,()=>this.updateSelectedClass({ methods: item.methods.filter(method => method.id !== id) })); }
   cancelMethodEdit() { this.editingMethodId = null; this.methodDraft = this.emptyMethod(); }
 
   addRelation() {
@@ -537,7 +541,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     if(event.operation&&event.type!=='participant:cursor'&&!event.type.endsWith(':error'))this.activity.update(items=>[event,...items].slice(0,100));
     if(event.type==='session:error')this.showNotice('error',event.operation||'Error de colaboración');
   }
-  private requestLock(elementType:UmlLockElementType,elementId:string,onGranted?:()=>void){if(!this.collaborativeSession()){onGranted?.();return;}const key=this.lockKey(elementType,elementId),current=this.elementLocks()[key];if(current?.userId===this.currentUserId()){onGranted?.();return;}if(current){this.lockBlocked(elementType,elementId);return;}if(this.pendingLock()===key)return;if(onGranted)this.pendingLockActions.set(key,onGranted);this.pendingLock.set(key);this.collaboration.publish({type:'lock:acquire',projectId:this.projectId,elementId,elementType,operation:'solicita editar'});}
+  private requestLock(elementType:UmlLockElementType,elementId:string,onGranted?:()=>void){if(!this.collaborativeSession()){onGranted?.();return;}const key=this.lockKey(elementType,elementId),current=this.elementLocks()[key];if(current?.userId===this.currentUserId()){onGranted?.();return;}if(current){this.lockBlocked(elementType,elementId);return;}if(this.pendingLock()===key){if(onGranted)this.pendingLockActions.set(key,onGranted);return;}if(onGranted)this.pendingLockActions.set(key,onGranted);this.pendingLock.set(key);this.collaboration.publish({type:'lock:acquire',projectId:this.projectId,elementId,elementType,operation:'solicita editar'});}
   private releaseLock(elementType:UmlLockElementType,elementId:string){if(!this.collaborativeSession()||!this.canEdit(elementType,elementId))return;this.collaboration.publish({type:'lock:release',projectId:this.projectId,elementId,elementType,operation:'finalizó la edición'});}
   private releaseOwnedLocks(){Object.values(this.elementLocks()).filter(lock=>lock.userId===this.currentUserId()).forEach(lock=>this.releaseLock(lock.elementType,lock.elementId));}
   private renewOwnedLocks(){if(!this.collaborativeSession())return;Object.values(this.elementLocks()).filter(lock=>lock.userId===this.currentUserId()).forEach(lock=>this.collaboration.publish({type:'lock:renew',projectId:this.projectId,elementId:lock.elementId,elementType:lock.elementType,operation:'continúa editando'}));}

@@ -76,6 +76,7 @@ backup-before-*/
 
 # Java / Maven / Spring Boot
 **/target/
+**/target.pre-*/
 **/*.class
 **/.classpath
 **/.project

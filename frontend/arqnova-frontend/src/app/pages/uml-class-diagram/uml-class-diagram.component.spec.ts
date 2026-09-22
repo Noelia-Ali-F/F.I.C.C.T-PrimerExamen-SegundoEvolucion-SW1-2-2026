@@ -183,6 +183,27 @@ describe('UmlClassDiagramComponent', () => {
     expect(component.selectedClass()?.methods).toHaveLength(0);
   });
 
+  it('actualiza inmediatamente atributos y métodos visibles en el lienzo', () => {
+    component.newClassName = 'Turno'; component.addClass();
+    component.attributeDraft = { id: '', name: 'id', type: 'String', isPrimaryKey: false }; component.saveAttribute();
+    component.methodDraft = { id: '', name: 'reservar', parameters: '', returnType: 'void' }; component.saveMethod();
+    fixture.detectChanges();
+    let card = fixture.nativeElement.querySelector('.class-card') as HTMLElement;
+    expect(card.textContent).toContain('id: String');
+    expect(card.textContent).toContain('reservar(): void');
+
+    component.editAttribute(component.selectedClass()!.attributes[0]);
+    component.attributeDraft.type = 'Integer'; component.attributeDraft.isPrimaryKey = true; component.saveAttribute();
+    component.editMethod(component.selectedClass()!.methods[0]);
+    component.methodDraft.name = 'confirmar'; component.methodDraft.returnType = 'Boolean'; component.saveMethod();
+    fixture.detectChanges();
+    card = fixture.nativeElement.querySelector('.class-card') as HTMLElement;
+    expect(card.textContent).toContain('PK id: Integer');
+    expect(card.textContent).toContain('confirmar(): Boolean');
+    expect(card.textContent).not.toContain('id: String');
+    expect(card.textContent).not.toContain('reservar(): void');
+  });
+
   it('usa String por defecto y limita la edición manual a tipos compatibles con CU9', () => {
     component.newClassName='Profesional'; component.addClass();
     expect(component.attributeDraft.type).toBe('String');
@@ -499,6 +520,14 @@ describe('UmlClassDiagramComponent', () => {
     (component as any).executeAiCommands(commands, 0, () => {});
     expect(component.classes().find(item => item.id === 'class-ai-cliente')?.attributes[0]).toEqual(expect.objectContaining({ isPrimaryKey: true }));
     expect(component.relations()[0]).toEqual(expect.objectContaining({ id: 'rel-ai-1', sourceId: 'class-ai-cliente', targetId: pedido.id }));
+  });
+
+  it('muestra ayuda flotante descriptiva en las acciones principales de la barra', () => {
+    const buttons=[...fixture.nativeElement.querySelectorAll('.toolbar button[data-tooltip]')] as HTMLButtonElement[];
+    expect(buttons.length).toBeGreaterThanOrEqual(8);
+    expect(buttons.every(button=>Boolean(button.dataset['tooltip']?.trim())&&Boolean(button.getAttribute('aria-label')))).toBe(true);
+    expect(buttons.find(button=>button.getAttribute('aria-label')==='Abrir Asistente IA')?.dataset['tooltip']).toContain('texto o voz');
+    expect(buttons.find(button=>button.getAttribute('aria-label')==='Guardar proyecto')?.dataset['tooltip']).toContain('Guardar');
   });
 
   it('envía automáticamente una transcripción final una sola vez por el mismo flujo de texto', async () => {

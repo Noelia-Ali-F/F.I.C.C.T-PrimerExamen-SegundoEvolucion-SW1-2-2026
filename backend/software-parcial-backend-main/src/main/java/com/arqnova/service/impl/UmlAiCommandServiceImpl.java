@@ -42,6 +42,7 @@ public class UmlAiCommandServiceImpl implements UmlAiCommandService {
         fallback.setFallbackUsed(true);
         if (fallback.getOperation() != null) {
             String elementType = fallback.getOperation().startsWith("ATTRIBUTE_") ? "attribute"
+                    : fallback.getOperation().startsWith("METHOD_") ? "method"
                     : fallback.getOperation().startsWith("RELATION_") ? "relation" : "class";
             fallback.setOperations(List.of(UmlAiOperationResponse.builder().type(fallback.getOperation())
                     .targetId(fallback.getTargetId()).elementType(elementType)

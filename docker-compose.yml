@@ -31,6 +31,9 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?AUTH_TOKEN_SECRET es obligatorio}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
+      GEMINI_API_KEY_2: ${GEMINI_API_KEY_2:-}
+      GEMINI_API_KEY_3: ${GEMINI_API_KEY_3:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
       PORT: 8080
       DB_HOST: postgres
@@ -64,6 +67,25 @@ services:
     ports:
       - "${FRONTEND_PUBLIC_PORT:-8081}:8080"
 
+  gateway:
+    image: caddy:2-alpine
+    container_name: arqnova-gateway
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    environment:
+      ARQNOVA_DOMAIN: ${ARQNOVA_DOMAIN:-18-116-164-204.sslip.io}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   postgres_data:
   backend_uploads:
+  caddy_data:
+  caddy_config:

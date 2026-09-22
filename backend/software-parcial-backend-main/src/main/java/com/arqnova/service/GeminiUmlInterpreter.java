@@ -7,6 +7,7 @@ import com.arqnova.dto.request.UmlAiCommandRequest;
 import com.arqnova.dto.response.UmlAiCommandResponse;
 import com.arqnova.dto.response.UmlAiOperationResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -39,12 +40,15 @@ public class GeminiUmlInterpreter {
     private static final long MAX_RETRY_AFTER_MS = 30_000L;
     private static final Set<Integer> TRANSIENT_HTTP_CODES = Set.of(408, 429, 500, 502, 503, 504);
     private static final Set<String> OPERATIONS = Set.of("CLASS_CREATE", "CLASS_UPDATE", "CLASS_DELETE",
-            "ATTRIBUTE_CREATE", "ATTRIBUTE_UPDATE", "ATTRIBUTE_DELETE", "RELATION_CREATE", "RELATION_UPDATE", "RELATION_DELETE");
+            "ATTRIBUTE_CREATE", "ATTRIBUTE_UPDATE", "ATTRIBUTE_DELETE",
+            "METHOD_CREATE", "METHOD_UPDATE", "METHOD_DELETE",
+            "RELATION_CREATE", "RELATION_UPDATE", "RELATION_DELETE");
     private static final Set<String> RELATION_TYPES = Set.of("association", "aggregation", "composition", "inheritance", "dependency");
     private static final String MULTIPLICITY = "^(\\*|\\d+|\\d+\\.\\.(\\d+|\\*))$";
 
     private final ObjectMapper mapper;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
+    private GeminiKeyManager keyManager;
 
     @Value("${app.gemini.api-key:}") private String apiKey;
     @Value("${app.gemini.model:gemini-3.8-flash}") private String model;
@@ -54,11 +58,22 @@ public class GeminiUmlInterpreter {
 
     public GeminiUmlInterpreter(ObjectMapper mapper) { this.mapper = mapper; }
 
-    public boolean isConfigured() { return apiKey != null && !apiKey.isBlank(); }
+    @Autowired(required = false)
+    void setKeyManager(GeminiKeyManager keyManager) { this.keyManager = keyManager; }
+
+    public boolean isConfigured() {
+        return (keyManager != null && keyManager.isConfigured()) || (apiKey != null && !apiKey.isBlank());
+    }
 
     public static class ProviderException extends IllegalStateException {
         public final int httpStatus;
-        public ProviderException(int status) { super("Gemini rechazó la solicitud"); this.httpStatus = status; }
+        final boolean quotaRelated;
+        public ProviderException(int status) { this(status, status == 429); }
+        ProviderException(int status, boolean quotaRelated) {
+            super("Gemini rechazó la solicitud");
+            this.httpStatus = status;
+            this.quotaRelated = quotaRelated;
+        }
     }
 
     public Map<String, Object> analyzeImage(MultipartFile image) throws Exception {
@@ -85,10 +100,7 @@ public class GeminiUmlInterpreter {
                         Map.of("inlineData", Map.of("mimeType", mime, "data", Base64.getEncoder().encodeToString(image.getBytes())))))),
                 "generationConfig", Map.of("temperature", 0.1, "responseMimeType", "application/json", "responseJsonSchema", imageSchema()));
         String endpoint = baseUrl + "/models/" + URLEncoder.encode(model, StandardCharsets.UTF_8) + ":generateContent";
-        HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(timeoutSeconds))
-                .header("Content-Type", "application/json").header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
-        HttpResponse<String> response = sendWithRetry(request);
+        HttpResponse<String> response = sendWithKeyRotation(endpoint, mapper.writeValueAsString(body));
         JsonNode root = mapper.readTree(response.body());
         String json = root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
         if (json.isBlank()) throw new IllegalStateException("No se obtuvo un resultado del reconocimiento.");
@@ -106,9 +118,12 @@ public class GeminiUmlInterpreter {
                 Interpreta español natural y permite varias operaciones ordenadas. No inventes elementos existentes.
                 Si falta información esencial o hay ambigüedad, status=CLARIFICATION, operations=[] y formula clarificationQuestion.
                 Tipos permitidos: CLASS_CREATE, CLASS_UPDATE, CLASS_DELETE, ATTRIBUTE_CREATE, ATTRIBUTE_UPDATE,
-                ATTRIBUTE_DELETE, RELATION_CREATE, RELATION_UPDATE, RELATION_DELETE.
+                ATTRIBUTE_DELETE, METHOD_CREATE, METHOD_UPDATE, METHOD_DELETE,
+                RELATION_CREATE, RELATION_UPDATE, RELATION_DELETE.
                 Para crear clase usa target.className y parameters.attributes=[{name,type,isPrimaryKey}].
-                Para atributos usa target.className y target.attributeName. Para relaciones usa target.sourceClassName y target.targetClassName.
+                Para atributos usa target.className y target.attributeName.
+                Para métodos usa target.className y target.methodName; parameters puede incluir name, parameters y returnType.
+                Para relaciones usa target.sourceClassName y target.targetClassName.
                 Tipos de relación: association, aggregation, composition, inheritance, dependency.
                 Multiplicidades válidas: *, número, n..m o n..*.
                 Reconoce expresiones como entidad/clase, atributo/campo, identificador/PK, uno a muchos, renombrar y relacionar.
@@ -124,10 +139,7 @@ public class GeminiUmlInterpreter {
                 "generationConfig", Map.of("temperature", 0.1, "responseMimeType", "application/json", "responseJsonSchema", schema())
         );
         String endpoint = baseUrl + "/models/" + URLEncoder.encode(model, StandardCharsets.UTF_8) + ":generateContent";
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(timeoutSeconds))
-                .header("Content-Type", "application/json").header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
-        HttpResponse<String> response = sendWithRetry(httpRequest);
+        HttpResponse<String> response = sendWithKeyRotation(endpoint, mapper.writeValueAsString(body));
         log.debug("Gemini UML respondió HTTP {} usando el modelo {} y provider=GEMINI",
                 response.statusCode(), model);
         JsonNode root = mapper.readTree(response.body());
@@ -149,7 +161,38 @@ public class GeminiUmlInterpreter {
         }
     }
 
-    private HttpResponse<String> sendWithRetry(HttpRequest request) throws Exception {
+    private HttpResponse<String> sendWithKeyRotation(String endpoint, String body) throws Exception {
+        List<String> availableKeys = keyManager != null && keyManager.isConfigured()
+                ? keyManager.keysFromActive()
+                : apiKey == null || apiKey.isBlank() ? List.of() : List.of(apiKey.trim());
+        if (availableKeys.isEmpty()) throw new IllegalStateException("Gemini no está configurado.");
+
+        ProviderException lastQuotaError = null;
+        boolean canRotate = availableKeys.size() > 1;
+        for (int index = 0; index < availableKeys.size(); index++) {
+            String selectedKey = availableKeys.get(index);
+            HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(timeoutSeconds))
+                    .header("Content-Type", "application/json").header("x-goog-api-key", selectedKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+            try {
+                return sendWithRetry(request, canRotate);
+            } catch (ProviderException error) {
+                if (!error.quotaRelated) throw error;
+                lastQuotaError = error;
+                if (keyManager != null) keyManager.markQuotaExhausted(selectedKey);
+                if (index + 1 < availableKeys.size()) {
+                    log.warn("Gemini agotó la cuota de la clave activa; se intentará la siguiente clave disponible ({}/{})",
+                            index + 1, availableKeys.size());
+                } else {
+                    log.warn("Gemini agotó la cuota de todas las claves configuradas ({}/{})",
+                            index + 1, availableKeys.size());
+                }
+            }
+        }
+        throw lastQuotaError == null ? new IllegalStateException("Gemini no está disponible temporalmente") : lastQuotaError;
+    }
+
+    private HttpResponse<String> sendWithRetry(HttpRequest request, boolean rotateOnQuota) throws Exception {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             HttpResponse<String> response;
             try {
@@ -164,15 +207,27 @@ public class GeminiUmlInterpreter {
             int status = response.statusCode();
             if (status >= 200 && status < 300) return response;
 
+            boolean quotaRelated = isQuotaError(status, response.body());
+            if (quotaRelated && rotateOnQuota) throw new ProviderException(status, true);
             boolean retryable = TRANSIENT_HTTP_CODES.contains(status);
             log.warn("Gemini UML respondió HTTP {} usando el modelo {} (intento {}/{}, reintento={})",
                     status, model, attempt, MAX_ATTEMPTS, retryable && attempt < MAX_ATTEMPTS);
             if (!retryable || attempt == MAX_ATTEMPTS) {
-                throw new ProviderException(status);
+                throw new ProviderException(status, quotaRelated);
             }
             Thread.sleep(status == 429 ? retryAfterOrBackoff(response, attempt) : backoffWithJitter(attempt));
         }
         throw new IllegalStateException("Gemini no está disponible temporalmente");
+    }
+
+    private boolean isQuotaError(int status, String body) {
+        if (status == 429) return true;
+        String normalized = body == null ? "" : body.toLowerCase(Locale.ROOT);
+        return normalized.contains("resource_exhausted")
+                || normalized.contains("quota exceeded")
+                || normalized.contains("quota agotada")
+                || normalized.contains("rate limit")
+                || normalized.contains("request limit");
     }
 
     private long backoffWithJitter(int failedAttempt) {
@@ -210,12 +265,13 @@ public class GeminiUmlInterpreter {
         Map<String, Object> string = Map.of("type", "string");
         Map<String, Object> nullableString = Map.of("type", List.of("string", "null"));
         Map<String, Object> target = Map.of("type", "object", "properties", Map.of(
-                "className", nullableString, "attributeName", nullableString,
+                "className", nullableString, "attributeName", nullableString, "methodName", nullableString,
                 "sourceClassName", nullableString, "targetClassName", nullableString),
-                "required", List.of("className", "attributeName", "sourceClassName", "targetClassName"));
+                "required", List.of("className", "attributeName", "methodName", "sourceClassName", "targetClassName"));
         Map<String, Object> operationType = Map.of("type", "string", "enum", List.of(
                 "CLASS_CREATE", "CLASS_UPDATE", "CLASS_DELETE",
                 "ATTRIBUTE_CREATE", "ATTRIBUTE_UPDATE", "ATTRIBUTE_DELETE",
+                "METHOD_CREATE", "METHOD_UPDATE", "METHOD_DELETE",
                 "RELATION_CREATE", "RELATION_UPDATE", "RELATION_DELETE"));
         Map<String, Object> operation = Map.of("type", "object", "properties", Map.of(
                 "type", operationType, "target", target,
@@ -303,7 +359,7 @@ public class GeminiUmlInterpreter {
                 targetId = "class-ai-" + UUID.randomUUID();
                 List<Map<String,Object>> attrs = validateAttributes(p.get("attributes")); if (attrs == null) return null;
                 p=new LinkedHashMap<>();p.put("name",name);p.put("id",targetId);p.put("attributes",attrs);
-                classes.add(new LinkedHashMap<>(Map.of("id", targetId, "name", name, "attributes", attrs))); elementType = "class";
+                classes.add(new LinkedHashMap<>(Map.of("id", targetId, "name", name, "attributes", attrs, "methods", new ArrayList<>()))); elementType = "class";
             }
             case "CLASS_UPDATE", "CLASS_DELETE" -> {
                 Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;targetId=text(clazz.get("id"));elementType="class";
@@ -317,6 +373,29 @@ public class GeminiUmlInterpreter {
                 Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;Map<String,Object> attr=findUnique(attributes(clazz),target.get("attributeName"));if(attr==null)return null;targetId=text(attr.get("id"));p.put("classId",clazz.get("id"));elementType="attribute";
                 if(type.equals("ATTRIBUTE_UPDATE")){Map<String,Object> clean=new LinkedHashMap<>();clean.put("classId",clazz.get("id"));if(p.containsKey("name")){String name=validName(p.get("name"));if(name==null)return null;clean.put("name",name);}if(p.containsKey("type")){String dataType=validType(p.get("type"));if(dataType==null)return null;clean.put("type",dataType);}if(p.containsKey("isPrimaryKey")){if(!(p.get("isPrimaryKey") instanceof Boolean))return null;clean.put("isPrimaryKey",p.get("isPrimaryKey"));}if(clean.size()==1)return null;p=clean;}
                 else {String deletedId=targetId;attributes(clazz).removeIf(item->deletedId.equals(text(item.get("id"))));p=new LinkedHashMap<>(Map.of("classId",clazz.get("id")));}
+            }
+            case "METHOD_CREATE" -> {
+                Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;
+                String name=validName(first(target.get("methodName"),p.get("name")));
+                String returnType=validType(p.getOrDefault("returnType","void"));
+                String parameters=cleanText(p.get("parameters"),500);
+                if(name==null||returnType==null||exists(methods(clazz),name))return null;
+                targetId="method-ai-"+UUID.randomUUID();
+                p=new LinkedHashMap<>();p.put("classId",clazz.get("id"));p.put("name",name);p.put("parameters",parameters);p.put("returnType",returnType);
+                methods(clazz).add(new LinkedHashMap<>(Map.of("id",targetId,"name",name,"parameters",parameters,"returnType",returnType)));
+                elementType="method";
+            }
+            case "METHOD_UPDATE", "METHOD_DELETE" -> {
+                Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;
+                Map<String,Object> method=findUnique(methods(clazz),target.get("methodName"));if(method==null)return null;
+                targetId=text(method.get("id"));elementType="method";
+                if(type.equals("METHOD_UPDATE")){
+                    Map<String,Object> clean=new LinkedHashMap<>();clean.put("classId",clazz.get("id"));
+                    if(p.containsKey("name")){String name=validName(p.get("name"));if(name==null)return null;Map<String,Object> duplicate=findUnique(methods(clazz),name);if(duplicate!=null&&!targetId.equals(text(duplicate.get("id"))))return null;clean.put("name",name);}
+                    if(p.containsKey("parameters"))clean.put("parameters",cleanText(p.get("parameters"),500));
+                    if(p.containsKey("returnType")){String returnType=validType(p.get("returnType"));if(returnType==null)return null;clean.put("returnType",returnType);}
+                    if(clean.size()==1)return null;method.putAll(clean);p=clean;
+                }else{String deletedId=targetId;methods(clazz).removeIf(item->deletedId.equals(text(item.get("id"))));p=new LinkedHashMap<>(Map.of("classId",clazz.get("id")));}
             }
             case "RELATION_CREATE" -> {
                 Map<String,Object> source=findUnique(classes,target.get("sourceClassName")),dest=findUnique(classes,target.get("targetClassName"));if(source==null||dest==null)return null;targetId="rel-ai-"+UUID.randomUUID();Map<String,Object> clean=new LinkedHashMap<>();clean.put("sourceId",source.get("id"));clean.put("targetId",dest.get("id"));clean.put("type",p.getOrDefault("type","association"));clean.put("label",cleanText(p.get("label"),120));clean.put("sourceMultiplicity",p.getOrDefault("sourceMultiplicity","1"));clean.put("targetMultiplicity",p.getOrDefault("targetMultiplicity","0..*"));if(!validRelation(clean))return null;clean.put("id",targetId);p=clean;relations.add(new LinkedHashMap<>(p));elementType="relation";
@@ -356,6 +435,7 @@ public class GeminiUmlInterpreter {
     private boolean exists(List<Map<String,Object>> list,String name){return list.stream().anyMatch(i->normalize(text(i.get("name"))).equals(normalize(name)));}
     private Map<String,Object> findRelation(List<Map<String,Object>> list,String a,String b){List<Map<String,Object>> found=list.stream().filter(i->(a.equals(text(i.get("sourceId")))&&b.equals(text(i.get("targetId"))))||(b.equals(text(i.get("sourceId")))&&a.equals(text(i.get("targetId"))))).toList();return found.size()==1?found.get(0):null;}
     @SuppressWarnings("unchecked") private List<Map<String,Object>> attributes(Map<String,Object> clazz){return (List<Map<String,Object>>)clazz.computeIfAbsent("attributes",k->new ArrayList<>());}
+    @SuppressWarnings("unchecked") private List<Map<String,Object>> methods(Map<String,Object> clazz){return (List<Map<String,Object>>)clazz.computeIfAbsent("methods",k->new ArrayList<>());}
     @SuppressWarnings("unchecked") private List<Map<String,Object>> copyList(Object value){return value instanceof List<?>?mapper.convertValue(value,new TypeReference<>(){}):new ArrayList<>();}
     @SuppressWarnings("unchecked") private Map<String,Object> objectMap(Object value){return value instanceof Map<?,?>?new LinkedHashMap<>((Map<String,Object>)value):new LinkedHashMap<>();}
     @SuppressWarnings("unchecked") private Map<String,String> stringMap(Object value){Map<String,String> result=new LinkedHashMap<>();if(value instanceof Map<?,?> map)map.forEach((k,v)->{if(v!=null)result.put(text(k),cleanText(v,80));});return result;}

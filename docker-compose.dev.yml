@@ -28,6 +28,9 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
+      GEMINI_API_KEY_2: ${GEMINI_API_KEY_2:-}
+      GEMINI_API_KEY_3: ${GEMINI_API_KEY_3:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
       PORT: 8080
       DB_HOST: postgres
