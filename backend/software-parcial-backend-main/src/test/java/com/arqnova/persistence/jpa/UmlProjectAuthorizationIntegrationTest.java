@@ -53,8 +53,9 @@ class UmlProjectAuthorizationIntegrationTest {
         assertTrue(service.listAccessible("editor-b").stream().anyMatch(project -> PROJECT.equals(project.getId())));
         assertTrue(service.listAccessible("viewer-c").stream().anyMatch(project -> PROJECT.equals(project.getId())));
         assertFalse(service.listAccessible("intruder-d").stream().anyMatch(project -> PROJECT.equals(project.getId())));
+        assertTrue(service.listAccessible("admin").stream().anyMatch(project -> PROJECT.equals(project.getId())));
         assertThrows(UnauthorizedActionException.class, () -> service.deleteProjectAuthorized(PROJECT, "editor-b"));
-        service.deleteProjectAuthorized(PROJECT, "owner-a");
+        service.deleteProjectAuthorized(PROJECT, "admin");
         assertFalse(service.findProjectById(PROJECT).isPresent());
         assertFalse(service.findDiagramByProjectId(PROJECT).isPresent());
     }

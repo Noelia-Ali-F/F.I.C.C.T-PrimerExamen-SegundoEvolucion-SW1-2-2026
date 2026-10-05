@@ -654,6 +654,14 @@ describe('UmlClassDiagramComponent', () => {
     expect(buttons.find(button=>button.getAttribute('aria-label')==='Guardar proyecto')?.dataset['tooltip']).toContain('Guardar');
   });
 
+  it('muestra ayuda flotante descriptiva en las acciones principales de la barra', () => {
+    const buttons=[...fixture.nativeElement.querySelectorAll('.toolbar button[data-tooltip]')] as HTMLButtonElement[];
+    expect(buttons.length).toBeGreaterThanOrEqual(8);
+    expect(buttons.every(button=>Boolean(button.dataset['tooltip']?.trim())&&Boolean(button.getAttribute('aria-label')))).toBe(true);
+    expect(buttons.find(button=>button.getAttribute('aria-label')==='Abrir Asistente IA')?.dataset['tooltip']).toContain('texto o voz');
+    expect(buttons.find(button=>button.getAttribute('aria-label')==='Guardar proyecto')?.dataset['tooltip']).toContain('Guardar');
+  });
+
   it('envía automáticamente una transcripción final una sola vez por el mismo flujo de texto', async () => {
     const interpret = vi.spyOn((component as any).umlAi, 'interpret').mockReturnValue(of({
       status: 'READY', interpreter: 'OPENAI', fallbackUsed: false, message: 'Mascota creada.',

@@ -48,3 +48,7 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# Respaldo local de artefactos creados previamente por Docker
+*.pre-fvm
+*.pre-fvm/
