@@ -1,3 +1,5 @@
+import { XMI_GENERAL_MODELS } from "./fixtures/xmi-general-cases.fixture";
+import { EA16_VENTAS_ASSOCIATION } from './fixtures/ea16-ventas-association.fixture';
 import { UmlXmiService } from './uml-xmi.service';
 import { UmlDiagramModel } from './uml-class-diagram.models';
 import { EA16_PACIENTE_TURNO } from './fixtures/ea16-paciente-turno.fixture';
@@ -115,8 +117,54 @@ describe('CU8 XMI',()=>{
       ['reserva','1','0..*'],['atendido por','*','1'],['posee','1','1..*']
     ]);
   });
+  it('importa el diagrama real de EA16 con posiciones y clase de asociación',()=>{
+    const loaded=service.parse(EA16_VENTAS_ASSOCIATION).model;
+    expect(loaded.title).toBe('ventasssMARTES');
+    expect(loaded.classes).toHaveLength(5);
+    expect(loaded.classes.flatMap(c=>c.attributes)).toHaveLength(13);
+    expect(loaded.classes.find(c=>c.name==='Cliente')).toEqual(expect.objectContaining({x:374,y:562}));
+    const detail=loaded.classes.find(c=>c.name==='detalle')!;
+    const relation=loaded.relations.find(r=>r.associationClassId===detail.id)!;
+    expect(loaded.classes.find(c=>c.id===relation.sourceId)?.name).toBe('Venta');
+    expect(loaded.classes.find(c=>c.id===relation.targetId)?.name).toBe('Producto');
+    expect(relation).toEqual(expect.objectContaining({sourceMultiplicity:'*',targetMultiplicity:'1..*',label:''}));
+  });
+  it('exporta posiciones exactas, tamaño del editor, colores y enlace nativo de clase de asociación',()=>{
+    const detail={...model.classes[0],id:'detail',name:'Detalle',attributes:[],x:0,y:10,color:'#7c3aed'};
+    const source={...model,classes:[...model.classes,detail],relations:model.relations.map(r=>({...r,associationClassId:detail.id}))};
+    const xml=service.serialize(source);
+    expect(xml).toContain('Left=0;Top=10;Right=270;Bottom=120;');
+    expect(xml).toContain('associationclass=');
+    expect(xml).not.toMatch(/(?:BCol|LCol|LWth|FCol|Grad)=/);
+    const loaded=service.parse(xml).model;
+    expect(loaded.relations).toEqual(source.relations);
+    expect(loaded.classes.map(c=>[c.x,c.y,c.color])).toEqual(source.classes.map(c=>[c.x,c.y,c.color]));
+    const nativeOnly=service.parse(xml.replace(/ arq:[^= ]+="[^"]*"/g,'')).model;
+    expect(nativeOnly.classes.find(c=>c.name==='Detalle')).toEqual(expect.objectContaining({x:0,y:10,color:'#1e3a8a'}));
+    expect(nativeOnly.relations[0].associationClassId).toBe(nativeOnly.classes.find(c=>c.name==='Detalle')!.id);
+  });
   it('no crea referencias huérfanas',()=>{
     const xml=service.serialize(model).replace(/(<ownedEnd[^>]* type=")[^"]+/, '$1missing');
     const preview=service.parse(xml);expect(preview.model.relations).toHaveLength(0);expect(preview.warnings.length).toBeGreaterThan(1);
   });
+  for(const source of XMI_GENERAL_MODELS){
+    it('exporta clases de asociación UML estándar: '+source.title,()=>{
+      const xml=service.serialize(source),doc=new DOMParser().parseFromString(xml,'application/xml');
+      const canonical=Array.from(doc.getElementsByTagName('packagedElement')).filter(e=>e.getAttribute('xmi:type')==='uml:AssociationClass');
+      expect(canonical).toHaveLength(source.relations.filter(r=>r.associationClassId).length);
+      expect(canonical.every(c=>c.getElementsByTagName('ownedEnd').length===2)).toBe(true);
+      const loaded=service.parse(xml).model;
+      expect(loaded.classes.map(c=>[c.id,c.name,c.attributes,c.methods,c.x,c.y,c.color])).toEqual(source.classes.map(c=>[c.id,c.name,c.attributes,c.methods,c.x,c.y,c.color]));
+      expect([...loaded.relations].sort((a,b)=>a.id.localeCompare(b.id))).toEqual([...source.relations].sort((a,b)=>a.id.localeCompare(b.id)));
+      const native=service.parse(xml.replace(/ arq:[^= ]+="[^"]*"/g,'')).model;
+      expect(native.relations.filter(r=>r.associationClassId)).toHaveLength(canonical.length);
+      expect(native.relations).toHaveLength(source.relations.length);
+    });
+  }
+  it('rechaza enlaces de clase de asociación inexistentes o reutilizados sin perderlos silenciosamente',()=>{
+    const source=XMI_GENERAL_MODELS[0];
+    expect(()=>service.serialize({...source,relations:source.relations.map((r,i)=>i===0?{...r,associationClassId:'missing'}:r)})).toThrow('no existe');
+    expect(()=>service.serialize({...source,relations:source.relations.map((r,i)=>i===1?{...r,associationClassId:source.relations[0].associationClassId}:r)})).toThrow('dos relaciones');
+  });
+
 });

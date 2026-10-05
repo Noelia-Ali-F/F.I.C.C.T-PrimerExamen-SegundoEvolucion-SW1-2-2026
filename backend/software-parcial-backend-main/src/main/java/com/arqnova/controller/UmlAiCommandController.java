@@ -14,14 +14,14 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
-import com.arqnova.service.GeminiUmlInterpreter;
+import com.arqnova.service.OpenAiUmlInterpreter;
 
 @RestController
 @RequestMapping("/api/v1/uml-ai")
 @RequiredArgsConstructor
 public class UmlAiCommandController {
     private final UmlAiCommandService service;
-    private final GeminiUmlInterpreter gemini;
+    private final OpenAiUmlInterpreter openAi;
 
     @PostMapping("/interpret")
     public ResponseEntity<ApiResponse<UmlAiCommandResponse>> interpret(
@@ -37,11 +37,11 @@ public class UmlAiCommandController {
             return imageError(400,"INVALID_IMAGE","El archivo seleccionado no es una imagen válida.");
         }
         try {
-            Map<String,Object> result = gemini.analyzeImage(image);
+            Map<String,Object> result = openAi.analyzeImage(image);
             if (!"READY".equals(result.get("status")))
                 return imageError(422,"NO_UML_DETECTED","No se pudieron identificar clases UML con suficiente claridad en la imagen.");
             return ResponseEntity.ok(ApiResponse.ok("Imagen UML analizada", result));
-        } catch (GeminiUmlInterpreter.ProviderException error) {
+        } catch (OpenAiUmlInterpreter.ProviderException error) {
             if (error.httpStatus == 400 || error.httpStatus == 401 || error.httpStatus == 403)
                 return imageError(502,"AI_PROVIDER_REJECTED","El servicio de IA rechazó el análisis. Contacta al administrador.");
             return error.httpStatus == 429

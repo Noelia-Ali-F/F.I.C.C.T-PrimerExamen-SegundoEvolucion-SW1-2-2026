@@ -20,7 +20,7 @@ interface AiHistoryItem { instruction: string; message: string; kind: 'success' 
   selector: 'app-uml-class-diagram', standalone: true,
   imports: [CommonModule, FormsModule, MatIconModule],
   templateUrl: './uml-class-diagram.component.html',
-  styleUrls: ['./uml-class-diagram.component.scss', './uml-backend-generator.scss']
+  styleUrls: ['./uml-class-diagram.component.scss', './uml-backend-generator.scss', './uml-toolbar-tooltips.scss']
 })
 export class UmlClassDiagramComponent implements OnDestroy {
   private readonly backendGenerator = inject(UmlBackendGeneratorService);
@@ -53,7 +53,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     relations.forEach(r=>this.broadcast('relation:create',r.id,r,'importó una relación XMI','relation'));
     this.clearSelection();this.xmiPreview.set(null);
   }
-  exportXmi(){try{this.download(`${this.safeTitle()}.xmi`,this.xmi.serialize(this.model()),'application/xml');this.status.set('XMI 2.1 exportado');}catch(error){this.showNotice('error',error instanceof Error?error.message:'No se pudo exportar XMI.');}}
+  exportXmi(){try{this.download(`${this.safeTitle()}-EA.xmi`,this.xmi.serialize(this.model()),'application/xml');this.status.set('XMI para Enterprise Architect exportado');}catch(error){this.showNotice('error',error instanceof Error?error.message:'No se pudo exportar XMI.');}}
   @ViewChild('canvas', { static: true }) canvas!: ElementRef<HTMLElement>;
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   private readonly projectId: string;
@@ -118,6 +118,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   methodDraft: UmlMethod = this.emptyMethod();
   editingMethodId: string | null = null;
   relationDraft = { from: '', to: '', type: 'association' as UmlRelationType, label: '', fromMultiplicity: '1', toMultiplicity: '0..*' };
+  associationClassName = '';
   private dragging: { id: string; offsetX: number; offsetY: number } | null = null;
   private dragCandidate: { id:string; startX:number; startY:number; event:PointerEvent } | null = null;
   private lastCursorSentAt = 0;
@@ -237,8 +238,8 @@ export class UmlClassDiagramComponent implements OnDestroy {
   closeImageGenerator(){if(this.imageProcessing())return;this.imageModalOpen.set(false);this.resetImageGenerator();}
   selectUmlImage(event:Event){const input=event.target as HTMLInputElement,file=input.files?.[0];input.value='';if(!file)return;this.imageError.set('');if(!['image/png','image/jpeg','image/webp'].includes(file.type)){this.imageError.set('Usa una imagen PNG, JPG, JPEG o WEBP.');return;}if(file.size>10*1024*1024){this.imageError.set('La imagen no puede superar 10 MB.');return;}this.revokeImagePreview();this.imageFile=file;this.imagePreviewUrl.set(URL.createObjectURL(file));this.imageAnalysis.set(null);}
   processUmlImage(){if(!this.imageFile||this.imageProcessing())return;this.imageProcessing.set(true);this.imageAnalysis.set(null);this.imageError.set('');this.umlAi.analyzeImage(this.imageFile).subscribe({next:result=>{this.imageProcessing.set(false);if(result.status!=='READY'){this.imageError.set(result.message);return;}this.imageAnalysis.set({...result,warnings:[...result.warnings,...this.imageConflictWarnings(result)]});},error:error=>{this.imageProcessing.set(false);const messages:Record<string,string>={AI_PROVIDER_UNAVAILABLE:'El servicio de análisis con IA no está disponible temporalmente. Tu imagen no fue modificada. Inténtalo nuevamente más tarde.',AI_RATE_LIMITED:'El servicio de IA alcanzó su límite temporal de solicitudes. Inténtalo nuevamente más tarde.',NO_UML_DETECTED:'No se pudieron identificar elementos UML claramente. Usa una imagen con mejor resolución, contraste y encuadre.',INVALID_IMAGE:'El archivo seleccionado no es una imagen válida.',AI_INVALID_RESPONSE:'El servicio de IA devolvió una respuesta inválida. Inténtalo nuevamente.'};this.imageError.set(messages[error?.error?.code]||(error?.status===429?messages['AI_RATE_LIMITED']:error?.status===503||error?.status===504||error?.status===0?messages['AI_PROVIDER_UNAVAILABLE']:'No se pudo completar el análisis. Inténtalo nuevamente.'));}});}
-  generateImageResult(){const analysis=this.imageAnalysis();if(!analysis)return;const existingByName=new Map(this.classes().map(item=>[this.normalizedName(item.name),item]));const inserted:UmlClassNode[]=[];for(const detected of analysis.classes){const key=this.normalizedName(detected.name);if(existingByName.has(key))continue;const count=this.classes().length+inserted.length;const item:UmlClassNode={id:this.uniqueIdAgainst(detected.name,[...this.classes(),...inserted]),name:detected.name,description:'Reconocida desde imagen',stereotype:'Entidad',attributes:detected.attributes.map(value=>({id:this.entityId('attr'),name:value.name,type:value.type,isPrimaryKey:value.isPrimaryKey===true})),methods:[],responsibilities:[],x:70+(count%4)*350,y:70+Math.floor(count/4)*300,color:['#1e3a8a','#2563eb','#7c3aed','#b45309'][count%4]};inserted.push(item);existingByName.set(key,item);}
-    const insertedRelations:UmlRelation[]=[];for(const detected of analysis.relations){const source=existingByName.get(this.normalizedName(detected.sourceClassName)),target=existingByName.get(this.normalizedName(detected.targetClassName));if(!source||!target)continue;const duplicate=[...this.relations(),...insertedRelations].some(value=>value.sourceId===source.id&&value.targetId===target.id&&value.type===detected.type);if(duplicate)continue;insertedRelations.push({id:this.entityId('rel'),sourceId:source.id,targetId:target.id,type:detected.type as UmlRelationType,label:detected.label||'',sourceMultiplicity:detected.sourceMultiplicity,targetMultiplicity:detected.targetMultiplicity});}
+  generateImageResult(){const analysis=this.imageAnalysis();if(!analysis)return;const existingByName=new Map(this.classes().map(item=>[this.normalizedName(item.name),item]));const inserted:UmlClassNode[]=[];for(const detected of analysis.classes){const key=this.normalizedName(detected.name);if(existingByName.has(key))continue;const count=this.classes().length+inserted.length;const item:UmlClassNode={id:this.uniqueIdAgainst(detected.name,[...this.classes(),...inserted]),name:detected.name,description:'Reconocida desde imagen',stereotype:'Entidad',attributes:detected.attributes.map(value=>({id:this.entityId('attr'),name:value.name,type:value.type,isPrimaryKey:value.isPrimaryKey===true})),methods:(detected.methods||[]).map(method=>({id:this.entityId('method'),name:method.name,parameters:method.parameters||'',returnType:method.returnType||''})),responsibilities:[],x:70+(count%4)*350,y:70+Math.floor(count/4)*300,color:['#1e3a8a','#2563eb','#7c3aed','#b45309'][count%4]};if(Number.isFinite(detected.x)&&Number.isFinite(detected.y)){item.x=Math.round(40+Math.max(0,Math.min(1,detected.x!))*(this.canvasWidth-this.cardWidth-80));item.y=Math.round(40+Math.max(0,Math.min(1,detected.y!))*Math.max(0,this.canvasHeight-this.classHeight(item)-80));}inserted.push(item);existingByName.set(key,item);}
+    const insertedRelations:UmlRelation[]=[];for(const detected of analysis.relations){const source=existingByName.get(this.normalizedName(detected.sourceClassName)),target=existingByName.get(this.normalizedName(detected.targetClassName));if(!source||!target)continue;const duplicate=[...this.relations(),...insertedRelations].some(value=>value.sourceId===source.id&&value.targetId===target.id&&value.type===detected.type);if(duplicate)continue;const relation:UmlRelation={id:this.entityId('rel'),sourceId:source.id,targetId:target.id,type:detected.type as UmlRelationType,label:detected.label||'',sourceMultiplicity:detected.sourceMultiplicity,targetMultiplicity:detected.targetMultiplicity};const recognized=this.findRecognizedAssociationClass(detected,analysis,inserted,insertedRelations);if(recognized&&this.needsAssociationClass(relation)){relation.associationClassId=recognized.id;recognized.stereotype='Clase de asociación';recognized.x=Math.max(20,Math.min(this.canvasWidth-this.cardWidth-20,(source.x+target.x)/2));recognized.y=Math.max(20,Math.min(this.canvasHeight-150,(source.y+target.y)/2+130));}else{const associationClass=this.createAssociationClass(relation,[...this.classes(),...inserted],detected.associationClassName);if(associationClass)inserted.push(associationClass);}insertedRelations.push(relation);}
     if(!inserted.length&&!insertedRelations.length){this.imageError.set('No hay elementos nuevos para insertar. Revisa los conflictos indicados.');return;}const next={...this.model(),classes:[...this.classes(),...inserted],relations:[...this.relations(),...insertedRelations]};this.updateModel(next,'Diagrama generado desde imagen');inserted.forEach(item=>this.broadcast('class:create',item.id,item,'creó una clase desde imagen'));insertedRelations.forEach(item=>this.broadcast('relation:create',item.id,item,'creó una relación desde imagen','relation'));this.imageModalOpen.set(false);this.resetImageGenerator();this.showNotice('success',`Se insertaron ${inserted.length} clases y ${insertedRelations.length} relaciones editables.`);}
   private imageConflictWarnings(result:UmlImageAnalysis){const existing=new Set(this.classes().map(item=>this.normalizedName(item.name)));return result.classes.filter(item=>existing.has(this.normalizedName(item.name))).map(item=>`La clase ${item.name} ya existe y no se sobrescribirá.`);}
   private resetImageGenerator(){this.revokeImagePreview();this.imageFile=null;this.imageAnalysis.set(null);this.imageError.set('');this.imageProcessing.set(false);}
@@ -256,7 +257,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
       }
     } else {
       this.voice.clear();
-      this.voiceCaptureActive=this.voice.start(true);
+      this.voiceCaptureActive=this.voice.start(false);
     }
   }
   useVoiceTranscript() { const value=this.voice.getTranscriptCandidate();if(value)this.aiInstruction.set(value); }
@@ -334,12 +335,16 @@ export class UmlClassDiagramComponent implements OnDestroy {
     const selected = this.selectedClass();
     const name = this.methodDraft.name.trim();
     if (!selected || !name) return this.showNotice('error', 'El nombre del método es obligatorio.');
+    if (!this.canEdit('class', selected.id)) {
+      if (this.collaborativeSession()) return this.requestLock('class', selected.id, () => this.saveMethod());
+      return this.lockBlocked('class', selected.id);
+    }
     const value = { id: this.editingMethodId ?? this.entityId('method'), name, parameters: this.methodDraft.parameters.trim(), returnType: this.methodDraft.returnType.trim() || 'void' };
     const methods = this.editingMethodId ? selected.methods.map(item => item.id === this.editingMethodId ? value : item) : [...selected.methods, value];
     this.updateSelectedClass({ methods }); this.cancelMethodEdit();
   }
-  editMethod(item: UmlMethod) { this.editingMethodId = item.id; this.methodDraft = { ...item }; }
-  deleteMethod(id: string) { const item = this.selectedClass(); if (item) this.updateSelectedClass({ methods: item.methods.filter(method => method.id !== id) }); }
+  editMethod(item: UmlMethod) { const selected=this.selectedClass();if(!selected)return;this.requestLock('class',selected.id,()=>{this.editingMethodId = item.id; this.methodDraft = { ...item };}); }
+  deleteMethod(id: string) { const item = this.selectedClass(); if (!item) return;this.requestLock('class',item.id,()=>this.updateSelectedClass({ methods: item.methods.filter(method => method.id !== id) })); }
   cancelMethodEdit() { this.editingMethodId = null; this.methodDraft = this.emptyMethod(); }
 
   addRelation() {
@@ -349,8 +354,11 @@ export class UmlClassDiagramComponent implements OnDestroy {
     if (!this.classes().some(item => item.id === from) || !this.classes().some(item => item.id === to) || !this.relationTypes.includes(type)) return this.showNotice('error', 'La relación contiene valores no válidos.');
     if (!this.validMultiplicity(this.relationDraft.fromMultiplicity) || !this.validMultiplicity(this.relationDraft.toMultiplicity)) return this.showNotice('error', 'Usa multiplicidades como 1, 0..1, 1..* o 0..*.');
     const relation: UmlRelation = { id: this.entityId('rel'), sourceId: from, targetId: to, type, label: this.relationDraft.label.trim(), sourceMultiplicity: this.relationDraft.fromMultiplicity.trim(), targetMultiplicity: this.relationDraft.toMultiplicity.trim() };
-    this.updateModel({ ...this.model(), relations: [...this.relations(), relation] }, 'Relación creada', 'relation:create', relation.id, relation);
-    this.relationDraft.label = ''; this.selectedRelationId.set(relation.id); this.selectedClassId.set(null);
+    const associationClass = this.createAssociationClass(relation, this.classes(), this.associationClassName);
+    this.updateModel({ ...this.model(), classes: associationClass ? [...this.classes(), associationClass] : this.classes(), relations: [...this.relations(), relation] }, 'Relación creada');
+    if (associationClass) this.broadcast('class:create', associationClass.id, associationClass, 'creó una clase de asociación');
+    this.broadcast('relation:create', relation.id, relation, 'creó una relación', 'relation');
+    this.relationDraft.label = ''; this.associationClassName = ''; this.selectedRelationId.set(relation.id); this.selectedClassId.set(null);
   }
   updateSelectedRelation(changes: Partial<UmlRelation>) {
     const id = this.selectedRelationId(); if (!id) return;
@@ -359,7 +367,10 @@ export class UmlClassDiagramComponent implements OnDestroy {
     const updated = { ...this.relations().find(item => item.id === id)!, ...changes };
     if (!this.classes().some(item => item.id === updated.sourceId) || !this.classes().some(item => item.id === updated.targetId)) return this.showNotice('error', 'La relación debe conectar clases existentes.');
     if (updated.sourceId === updated.targetId) return this.showNotice('error', 'El origen y el destino deben ser diferentes.');
-    this.updateModel({ ...this.model(), relations: this.relations().map(item => item.id === id ? updated : item) }, 'Relación actualizada', 'relation:update', id, updated);
+    const associationClass = this.createAssociationClass(updated, this.classes());
+    this.updateModel({ ...this.model(), classes: associationClass ? [...this.classes(), associationClass] : this.classes(), relations: this.relations().map(item => item.id === id ? updated : item) }, 'Relación actualizada');
+    if (associationClass) this.broadcast('class:create', associationClass.id, associationClass, 'creó una clase de asociación');
+    this.broadcast('relation:update', id, updated, 'actualizó una relación', 'relation');
   }
 
   requestDeleteClass() { if (this.selectedClass()) this.dialogAction.set('delete-class'); }
@@ -372,8 +383,8 @@ export class UmlClassDiagramComponent implements OnDestroy {
     if (action === 'delete-relation') this.deleteSelectedRelation();
     if (action === 'reset') { this.updateModel({ ...this.model(), classes: [], relations: [] }, 'Diagrama restablecido en blanco'); this.clearSelection(); }
   }
-  private deleteSelectedClass() { const id = this.selectedClassId(); if (!id) return; if(!this.canEdit('class',id))return this.lockBlocked('class',id); this.updateModel({ ...this.model(), classes: this.classes().filter(item => item.id !== id), relations: this.relations().filter(rel => rel.sourceId !== id && rel.targetId !== id) }, 'Clase y relaciones asociadas eliminadas', 'class:delete', id, undefined, 'class'); this.releaseLock('class',id); this.clearSelection(); }
-  private deleteSelectedRelation() { const id = this.selectedRelationId(); if (!id) return; if(!this.canEdit('relation',id))return this.lockBlocked('relation',id); this.updateModel({ ...this.model(), relations: this.relations().filter(rel => rel.id !== id) }, 'Relación eliminada', 'relation:delete', id, undefined, 'relation'); this.releaseLock('relation',id); this.clearSelection(); }
+  private deleteSelectedClass() { const id = this.selectedClassId(); if (!id) return; if(!this.canEdit('class',id))return this.lockBlocked('class',id); const linkedIds=this.relations().filter(rel=>rel.sourceId===id||rel.targetId===id).map(rel=>rel.associationClassId).filter((value):value is string=>!!value); this.updateModel({ ...this.model(), classes: this.classes().filter(item => item.id !== id && !linkedIds.includes(item.id)), relations: this.relations().filter(rel => rel.sourceId !== id && rel.targetId !== id).map(rel => rel.associationClassId === id ? {...rel,associationClassId:undefined} : rel) }, 'Clase y relaciones asociadas eliminadas', 'class:delete', id, undefined, 'class'); this.releaseLock('class',id); this.clearSelection(); }
+  private deleteSelectedRelation() { const id = this.selectedRelationId(); if (!id) return; if(!this.canEdit('relation',id))return this.lockBlocked('relation',id); const associationClassId=this.selectedRelation()?.associationClassId; this.updateModel({ ...this.model(), classes:associationClassId?this.classes().filter(item=>item.id!==associationClassId):this.classes(), relations: this.relations().filter(rel => rel.id !== id) }, 'Relación eliminada'); if(associationClassId)this.broadcast('class:delete',associationClassId,undefined,'eliminó una clase de asociación','class'); this.broadcast('relation:delete',id,undefined,'eliminó una relación','relation'); this.releaseLock('relation',id); this.clearSelection(); }
 
   startDrag(event: PointerEvent, item: UmlClassNode) { if (event.button !== 0) return; this.selectClass(item);this.dragCandidate={id:item.id,startX:event.clientX,startY:event.clientY,event};if(this.canEdit('class',item.id))this.beginDragging(event,item); }
   drag(event: PointerEvent) { this.shareCursor(event);if(this.dragCandidate&&!this.dragging&&Math.hypot(event.clientX-this.dragCandidate.startX,event.clientY-this.dragCandidate.startY)>4){const candidate=this.dragCandidate,item=this.classes().find(value=>value.id===candidate.id);this.dragCandidate=null;if(item)this.requestLock('class',item.id,()=>this.beginDragging(candidate.event,item));} if (!this.dragging) return; const rect = this.canvas.nativeElement.getBoundingClientRect(); const x = Math.max(10, Math.min(this.canvasWidth - this.cardWidth - 10, (event.clientX - rect.left) / this.zoom() - this.dragging.offsetX)); const y = Math.max(10, Math.min(this.canvasHeight - 220, (event.clientY - rect.top) / this.zoom() - this.dragging.offsetY)); this.model.set({ ...this.model(), classes: this.classes().map(item => item.id === this.dragging?.id ? { ...item, x: Math.round(x), y: Math.round(y) } : item) }); }
@@ -386,6 +397,35 @@ export class UmlClassDiagramComponent implements OnDestroy {
   attributeText(item: UmlAttribute) { return `${item.isPrimaryKey ? 'PK ' : ''}${item.name}: ${item.type || 'Sin definir'}`; }
   methodText(item: UmlMethod) { return `${item.name}(${item.parameters}): ${item.returnType || 'void'}`; }
   relationTypeLabel(type: UmlRelationType) { return ({ association:'Asociación', aggregation:'Agregación', composition:'Composición', inheritance:'Herencia', dependency:'Dependencia' })[type]; }
+  draftNeedsAssociationClass() { return this.relationDraft.type === 'association' && this.relationDraft.fromMultiplicity.trim().endsWith('*') && this.relationDraft.toMultiplicity.trim().endsWith('*'); }
+  associationClassFor(relation: UmlRelation) { return this.classes().find(item => item.id === relation.associationClassId) ?? null; }
+  private findRecognizedAssociationClass(detected: UmlImageAnalysis['relations'][number], analysis: UmlImageAnalysis, inserted: UmlClassNode[], relations: UmlRelation[]): UmlClassNode | null {
+    const used = new Set(relations.map(item => item.associationClassId));
+    const available = inserted.filter(item => !used.has(item.id) && !analysis.relations.some(relation =>
+      this.normalizedName(relation.sourceClassName) === this.normalizedName(item.name) || this.normalizedName(relation.targetClassName) === this.normalizedName(item.name)));
+    const explicit = detected.associationClassName?.trim();
+    if (explicit) return available.find(item => this.normalizedName(item.name) === this.normalizedName(explicit)) ?? null;
+    const manyToMany = analysis.relations.filter(relation => relation.type === 'association' && relation.sourceMultiplicity.trim().endsWith('*') && relation.targetMultiplicity.trim().endsWith('*'));
+    if (manyToMany.length !== 1) return null;
+    const detailCandidates = available.filter(item => /^detalle(?:$|[\s_-]|[A-Z])/iu.test(item.name));
+    return detailCandidates.length === 1 ? detailCandidates[0] : null;
+  }
+  private needsAssociationClass(relation: UmlRelation) { return relation.type === 'association' && relation.sourceMultiplicity.trim().endsWith('*') && relation.targetMultiplicity.trim().endsWith('*'); }
+  private createAssociationClass(relation: UmlRelation, classes: UmlClassNode[], requestedName = ''): UmlClassNode | null {
+    if (!this.needsAssociationClass(relation) || (relation.associationClassId && classes.some(item => item.id === relation.associationClassId))) return null;
+    const source = classes.find(item => item.id === relation.sourceId), target = classes.find(item => item.id === relation.targetId);
+    if (!source || !target) return null;
+    const base = requestedName.trim() || `Detalle${source.name}${target.name}`;
+    let name = base, suffix = 2;
+    while (classes.some(item => this.normalizedName(item.name) === this.normalizedName(name))) name = `${base}${suffix++}`;
+    const centerX = (source.x + target.x + this.cardWidth) / 2;
+    const centerY = (source.y + target.y + this.classHeight(source) / 2 + this.classHeight(target) / 2) / 2;
+    const associationClass: UmlClassNode = { id: this.entityId('assoc'), name, description: 'Atributos de la asociación', stereotype: 'Clase de asociación',
+      attributes: [], methods: [], responsibilities: [], x: Math.max(20, Math.min(this.canvasWidth - this.cardWidth - 20, centerX - this.cardWidth / 2)),
+      y: Math.max(20, Math.min(this.canvasHeight - 150, centerY + 110)), color: '#2563eb' };
+    relation.associationClassId = associationClass.id;
+    return associationClass;
+  }
   startMarker(relation: UmlRelation) { return relation.type === 'composition' ? 'url(#diamond-composition)' : relation.type === 'aggregation' ? 'url(#diamond-aggregation)' : null; }
   endMarker(relation: UmlRelation) { return relation.type === 'inheritance' ? 'url(#arrow-inheritance)' : null; }
   className(id: string) { return this.classes().find(item => item.id === id)?.name ?? id; }
@@ -410,7 +450,30 @@ export class UmlClassDiagramComponent implements OnDestroy {
     if (this.collaborativeSession()) this.collaborationModal.set(true);
     else this.shareModal.set(true);
   }
-  copyInvitation() { const link=this.invitationLink(); navigator.clipboard?.writeText(link); this.showNotice('success','Enlace de invitación copiado.'); }
+  async copyInvitation() {
+    const link = this.invitationLink();
+    if (!link) return this.showNotice('error', 'No existe un enlace de invitación para copiar.');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API no disponible');
+      await navigator.clipboard.writeText(link);
+      this.showNotice('success', 'Enlace de invitación copiado.');
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = link;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      let copied = false;
+      try { copied = document.execCommand('copy'); } catch { copied = false; }
+      textarea.remove();
+      this.showNotice(copied ? 'success' : 'error', copied
+        ? 'Enlace de invitación copiado.'
+        : 'No se pudo copiar automáticamente. Selecciona el enlace y cópialo manualmente.');
+    }
+  }
   invitationLink() { const session=this.collaborativeSession(); return session ? `${window.location.origin}/diagrama-clases/${session.projectId}?invite=${session.inviteCode}` : ''; }
   leaveCollaboration() { this.releaseOwnedLocks(); this.collaboration.disconnect(); this.collaborativeSession.set(null); this.participants.set([]); this.remoteActions.set({}); this.remoteCursors.set({}); this.elementLocks.set({}); }
   remoteAction(elementId:string){return this.remoteActions()[elementId];}
@@ -441,7 +504,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
         this.updateModel({...this.model(),classes:[...this.classes(),item]},'Clase creada mediante IA','class:create',item.id,item);this.selectClass(item);done();break;
       }
       case'CLASS_UPDATE':{const id=command.targetId!;lock('class',id,()=>{const item=this.classes().find(value=>value.id===id);if(!item)return;const updated={...item,...p};this.updateModel({...this.model(),classes:this.classes().map(value=>value.id===id?updated:value)},'Clase actualizada mediante IA','class:update',id,updated,'class');this.releaseLock('class',id);done();});break;}
-      case'CLASS_DELETE':{const id=command.targetId!;lock('class',id,()=>{this.updateModel({...this.model(),classes:this.classes().filter(value=>value.id!==id),relations:this.relations().filter(value=>value.sourceId!==id&&value.targetId!==id)},'Clase eliminada mediante IA','class:delete',id,undefined,'class');this.releaseLock('class',id);if(this.selectedClassId()===id)this.clearSelection();done();});break;}
+      case'CLASS_DELETE':{const id=command.targetId!;lock('class',id,()=>{const linkedIds=this.relations().filter(value=>value.sourceId===id||value.targetId===id).map(value=>value.associationClassId).filter((value):value is string=>!!value);this.updateModel({...this.model(),classes:this.classes().filter(value=>value.id!==id&&!linkedIds.includes(value.id)),relations:this.relations().filter(value=>value.sourceId!==id&&value.targetId!==id).map(value=>value.associationClassId===id?{...value,associationClassId:undefined}:value)},'Clase eliminada mediante IA','class:delete',id,undefined,'class');this.releaseLock('class',id);if(this.selectedClassId()===id)this.clearSelection();done();});break;}
       case'ATTRIBUTE_CREATE':{
         const classId=String(p['classId']),attribute:UmlAttribute={id:String(command.targetId||p['id']||this.entityId('attr')),name:String(p['name']),type:String(p['type']||'String'),isPrimaryKey:p['isPrimaryKey']===true};
         lock('attribute',attribute.id,()=>{const clazz=this.classes().find(value=>value.id===classId);if(!clazz)return;this.updateModel({...this.model(),classes:this.classes().map(value=>value.id===classId?{...value,attributes:[...value.attributes,attribute]}:value)},'Atributo creado mediante IA');this.broadcastAttribute('attribute:create',classId,attribute.id,attribute);this.releaseLock('attribute',attribute.id);done();});break;
@@ -453,10 +516,11 @@ export class UmlClassDiagramComponent implements OnDestroy {
       case'METHOD_DELETE':{const classId=String(p['classId']),id=command.targetId!;lock('class',classId,()=>{const clazz=this.classes().find(value=>value.id===classId);if(!clazz)return;const updated={...clazz,methods:clazz.methods.filter(value=>value.id!==id)};this.updateModel({...this.model(),classes:this.classes().map(value=>value.id===classId?updated:value)},'Método eliminado mediante asistente','class:update',classId,updated,'class');this.releaseLock('class',classId);done();});break;}
       case'RELATION_CREATE':{
         const relation:UmlRelation={id:String(command.targetId||p['id']||this.entityId('rel')),sourceId:String(p['sourceId']),targetId:String(p['targetId']),type:(p['type']||'association') as UmlRelationType,label:String(p['label']||''),sourceMultiplicity:String(p['sourceMultiplicity']||'1'),targetMultiplicity:String(p['targetMultiplicity']||'0..*')};
-        this.updateModel({...this.model(),relations:[...this.relations(),relation]},'Relación creada mediante IA','relation:create',relation.id,relation);this.selectedRelationId.set(relation.id);this.selectedClassId.set(null);done();break;
+        const associationClass=this.createAssociationClass(relation,this.classes(),String(p['associationClassName']||''));
+        this.updateModel({...this.model(),classes:associationClass?[...this.classes(),associationClass]:this.classes(),relations:[...this.relations(),relation]},'Relación creada mediante IA');if(associationClass)this.broadcast('class:create',associationClass.id,associationClass,'creó una clase de asociación');this.broadcast('relation:create',relation.id,relation,'creó una relación','relation');this.selectedRelationId.set(relation.id);this.selectedClassId.set(null);done();break;
       }
-      case'RELATION_UPDATE':{const id=command.targetId!;lock('relation',id,()=>{const current=this.relations().find(value=>value.id===id);if(!current)return;const relation={...current,...p,id};this.updateModel({...this.model(),relations:this.relations().map(value=>value.id===id?relation:value)},'Relación actualizada mediante IA','relation:update',id,relation,'relation');this.releaseLock('relation',id);done();});break;}
-      case'RELATION_DELETE':{const id=command.targetId!;lock('relation',id,()=>{this.updateModel({...this.model(),relations:this.relations().filter(value=>value.id!==id)},'Relación eliminada mediante IA','relation:delete',id,undefined,'relation');this.releaseLock('relation',id);if(this.selectedRelationId()===id)this.clearSelection();done();});break;}
+      case'RELATION_UPDATE':{const id=command.targetId!;lock('relation',id,()=>{const current=this.relations().find(value=>value.id===id);if(!current)return;const relation={...current,...p,id};const associationClass=this.createAssociationClass(relation,this.classes(),String(p['associationClassName']||''));this.updateModel({...this.model(),classes:associationClass?[...this.classes(),associationClass]:this.classes(),relations:this.relations().map(value=>value.id===id?relation:value)},'Relación actualizada mediante IA');if(associationClass)this.broadcast('class:create',associationClass.id,associationClass,'creó una clase de asociación');this.broadcast('relation:update',id,relation,'actualizó una relación','relation');this.releaseLock('relation',id);done();});break;}
+      case'RELATION_DELETE':{const id=command.targetId!;lock('relation',id,()=>{const associationClassId=this.relations().find(value=>value.id===id)?.associationClassId;this.updateModel({...this.model(),classes:associationClassId?this.classes().filter(value=>value.id!==associationClassId):this.classes(),relations:this.relations().filter(value=>value.id!==id)},'Relación eliminada mediante IA');if(associationClassId)this.broadcast('class:delete',associationClassId,undefined,'eliminó una clase de asociación','class');this.broadcast('relation:delete',id,undefined,'eliminó una relación','relation');this.releaseLock('relation',id);if(this.selectedRelationId()===id)this.clearSelection();done();});break;}
     }
   }
   private executeAiCommands(commands:UmlAiCommand[],index:number,done:()=>void){if(index>=commands.length){done();return;}this.executeAiCommand(commands[index],()=>this.executeAiCommands(commands,index+1,done));}
@@ -514,7 +578,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     if(event.operation&&event.type!=='participant:cursor'&&!event.type.endsWith(':error'))this.activity.update(items=>[event,...items].slice(0,100));
     if(event.type==='session:error')this.showNotice('error',event.operation||'Error de colaboración');
   }
-  private requestLock(elementType:UmlLockElementType,elementId:string,onGranted?:()=>void){if(!this.collaborativeSession()){onGranted?.();return;}const key=this.lockKey(elementType,elementId),current=this.elementLocks()[key];if(current?.userId===this.currentUserId()){onGranted?.();return;}if(current){this.lockBlocked(elementType,elementId);return;}if(this.pendingLock()===key)return;if(onGranted)this.pendingLockActions.set(key,onGranted);this.pendingLock.set(key);this.collaboration.publish({type:'lock:acquire',projectId:this.projectId,elementId,elementType,operation:'solicita editar'});}
+  private requestLock(elementType:UmlLockElementType,elementId:string,onGranted?:()=>void){if(!this.collaborativeSession()){onGranted?.();return;}const key=this.lockKey(elementType,elementId),current=this.elementLocks()[key];if(current?.userId===this.currentUserId()){onGranted?.();return;}if(current){this.lockBlocked(elementType,elementId);return;}if(this.pendingLock()===key){if(onGranted)this.pendingLockActions.set(key,onGranted);return;}if(onGranted)this.pendingLockActions.set(key,onGranted);this.pendingLock.set(key);this.collaboration.publish({type:'lock:acquire',projectId:this.projectId,elementId,elementType,operation:'solicita editar'});}
   private releaseLock(elementType:UmlLockElementType,elementId:string){if(!this.collaborativeSession()||!this.canEdit(elementType,elementId))return;this.collaboration.publish({type:'lock:release',projectId:this.projectId,elementId,elementType,operation:'finalizó la edición'});}
   private releaseOwnedLocks(){Object.values(this.elementLocks()).filter(lock=>lock.userId===this.currentUserId()).forEach(lock=>this.releaseLock(lock.elementType,lock.elementId));}
   private renewOwnedLocks(){if(!this.collaborativeSession())return;Object.values(this.elementLocks()).filter(lock=>lock.userId===this.currentUserId()).forEach(lock=>this.collaboration.publish({type:'lock:renew',projectId:this.projectId,elementId:lock.elementId,elementType:lock.elementType,operation:'continúa editando'}));}
@@ -524,7 +588,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private lockKey(elementType:UmlLockElementType,elementId:string){return `${elementType}:${elementId}`;}
   private currentUserId(){return this.auth.currentUser()?.username??'';}
   activityTarget(event:UmlLiveEvent){const labels:Record<string,string>={class:'Clase',attribute:'Atributo',relation:'Relación'};const element=(event.data?.element||event.data?.attribute) as any;const name=element?.name||element?.label;return event.elementType?`${labels[event.elementType]||event.elementType}: ${name||event.elementId||'sin identificar'}`:'';}
-  private applyRemoteMutation(event:UmlLiveEvent){const element=(event.data?.element||null) as any;let classes=this.classes(),relations=this.relations();switch(event.type){case'class:create':case'class:update':case'class:move':if(element)classes=[...classes.filter(i=>i.id!==element.id),element];break;case'attribute:create':{const classId=event.data?.classId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.some(value=>value.id===attribute.id)?item.attributes:[...item.attributes,attribute]}:item);break;}case'attribute:update':{const classId=event.data?.classId,attributeId=event.data?.attributeId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attributeId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.map(value=>value.id===attributeId?attribute:value)}:item);break;}case'attribute:delete':{const classId=event.data?.classId,attributeId=event.data?.attributeId;if(!classId||!attributeId)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.filter(value=>value.id!==attributeId)}:item);break;}case'class:delete':classes=classes.filter(i=>i.id!==event.elementId);relations=relations.filter(r=>r.sourceId!==event.elementId&&r.targetId!==event.elementId);break;case'relation:create':case'relation:update':if(element)relations=[...relations.filter(i=>i.id!==element.id),element];break;case'relation:delete':relations=relations.filter(i=>i.id!==event.elementId);break;default:return;}this.model.set({...this.model(),classes,relations,updatedAt:new Date().toISOString()});this.projectStore.upsertCollaborative(this.projectId,this.model().title,this.model());this.persist(`${event.userName||'Otro usuario'} ${event.operation||'actualizó el diagrama'}`);}
+  private applyRemoteMutation(event:UmlLiveEvent){const element=(event.data?.element||null) as any;let classes=this.classes(),relations=this.relations();switch(event.type){case'class:create':case'class:update':case'class:move':if(element)classes=[...classes.filter(i=>i.id!==element.id),element];break;case'attribute:create':{const classId=event.data?.classId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.some(value=>value.id===attribute.id)?item.attributes:[...item.attributes,attribute]}:item);break;}case'attribute:update':{const classId=event.data?.classId,attributeId=event.data?.attributeId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attributeId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.map(value=>value.id===attributeId?attribute:value)}:item);break;}case'attribute:delete':{const classId=event.data?.classId,attributeId=event.data?.attributeId;if(!classId||!attributeId)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.filter(value=>value.id!==attributeId)}:item);break;}case'class:delete':{const linkedIds=relations.filter(r=>r.sourceId===event.elementId||r.targetId===event.elementId).map(r=>r.associationClassId).filter((value):value is string=>!!value);classes=classes.filter(i=>i.id!==event.elementId&&!linkedIds.includes(i.id));relations=relations.filter(r=>r.sourceId!==event.elementId&&r.targetId!==event.elementId).map(r=>r.associationClassId===event.elementId?{...r,associationClassId:undefined}:r);break;}case'relation:create':case'relation:update':if(element)relations=[...relations.filter(i=>i.id!==element.id),element];break;case'relation:delete':relations=relations.filter(i=>i.id!==event.elementId);break;default:return;}this.model.set({...this.model(),classes,relations,updatedAt:new Date().toISOString()});this.projectStore.upsertCollaborative(this.projectId,this.model().title,this.model());this.persist(`${event.userName||'Otro usuario'} ${event.operation||'actualizó el diagrama'}`);}
   private normalizeModel(value:any):UmlDiagramModel { if(value?.format!=='uml-class-diagram'||![1,2].includes(value?.version)||!Array.isArray(value.classes)||!Array.isArray(value.relations)) throw new Error('El modelo UML almacenado tiene un formato incompatible.'); const classes=value.classes.map((item:any)=>({...item,description:item.description??item.responsibilities?.[0]??'',responsibilities:Array.isArray(item.responsibilities)?item.responsibilities:[],attributes:(item.attributes??[]).map((a:any,n:number)=>typeof a==='string'?this.parseLegacyAttribute(item.id,a,n):({...a,isPrimaryKey:a.isPrimaryKey===true})),methods:Array.isArray(item.methods)?item.methods:[],color:item.color||'#2563eb'}));const classIds=new Set(classes.map((item:any)=>item.id));const relations=value.relations.filter((relation:any)=>classIds.has(relation.sourceId)&&classIds.has(relation.targetId));return {...value,version:2,classes,relations}; }
   private parseLegacyAttribute(classId:string,value:string,index:number):UmlAttribute{const split=value.indexOf(':');const name=(split<0?value:value.slice(0,split)).trim();return{id:`${classId}-attr-${index+1}`,name,type:(split<0?'String':value.slice(split+1)).trim()||'String',isPrimaryKey:false};}
   private emptyAttribute():UmlAttribute{return{id:'',name:'',type:'String',isPrimaryKey:false};} private emptyMethod():UmlMethod{return{id:'',name:'',parameters:'',returnType:'void'};}

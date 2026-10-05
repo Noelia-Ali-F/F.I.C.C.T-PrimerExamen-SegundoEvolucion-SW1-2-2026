@@ -1,5 +1,6 @@
 package com.arqnova.persistence.jpa.service;
 
+import com.arqnova.domain.enums.RolUsuario;
 import com.arqnova.persistence.jpa.entity.ProjectEntity;
 import com.arqnova.persistence.jpa.entity.ProjectMemberEntity;
 import com.arqnova.persistence.jpa.entity.ProjectMemberId;
@@ -9,6 +10,7 @@ import com.arqnova.persistence.jpa.entity.UmlDiagramEntity;
 import com.arqnova.persistence.jpa.repository.ProjectJpaRepository;
 import com.arqnova.persistence.jpa.repository.ProjectMemberJpaRepository;
 import com.arqnova.persistence.jpa.repository.UmlDiagramJpaRepository;
+import com.arqnova.persistence.jpa.repository.UserJpaRepository;
 import com.arqnova.exception.DuplicateResourceException;
 import com.arqnova.exception.ResourceNotFoundException;
 import com.arqnova.exception.UnauthorizedActionException;
@@ -30,6 +32,7 @@ public class UmlProjectPersistenceService {
     private final ProjectJpaRepository projectRepository;
     private final ProjectMemberJpaRepository memberRepository;
     private final UmlDiagramJpaRepository diagramRepository;
+    private final UserJpaRepository userRepository;
 
     @Transactional
     public ProjectEntity createProject(String id, String name, String description, String ownerUserId) {
@@ -158,6 +161,9 @@ public class UmlProjectPersistenceService {
 
     @Transactional(readOnly = true)
     public List<ProjectEntity> listAccessible(String userId) {
+        if (isAdministrator(userId)) {
+            return projectRepository.findAllByOrderByUpdatedAtDesc();
+        }
         List<String> projectIds = memberRepository.findByIdUserId(userId).stream()
                 .map(member -> member.getId().getProjectId()).toList();
         return projectIds.isEmpty() ? List.of() : projectRepository.findByIdInOrderByUpdatedAtDesc(projectIds);
@@ -167,6 +173,9 @@ public class UmlProjectPersistenceService {
     public ProjectMemberRole requireAccess(String projectId, String userId, ProjectMemberRole... allowed) {
         if (!projectRepository.existsById(projectId)) {
             throw new ResourceNotFoundException("Proyecto", "id", projectId);
+        }
+        if (isAdministrator(userId)) {
+            return ProjectMemberRole.OWNER;
         }
         ProjectMemberRole role = memberRepository.findByIdProjectIdAndIdUserId(projectId, userId)
                 .map(ProjectMemberEntity::getMemberRole)
@@ -201,6 +210,12 @@ public class UmlProjectPersistenceService {
         requireAccess(projectId, userId, ProjectMemberRole.OWNER);
         projectRepository.deleteById(projectId);
         projectRepository.flush();
+    }
+
+    private boolean isAdministrator(String userId) {
+        return userRepository.findByUsernameIgnoreCase(userId)
+                .map(user -> user.getRole() == RolUsuario.ADMINISTRADOR)
+                .orElse(false);
     }
 
     private static void requireText(String value, String field) {

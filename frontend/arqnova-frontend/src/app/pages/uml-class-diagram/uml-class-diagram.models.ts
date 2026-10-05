@@ -35,6 +35,7 @@ export interface UmlRelation {
   label: string;
   sourceMultiplicity: string;
   targetMultiplicity: string;
+  associationClassId?: string;
 }
 
 export interface UmlDiagramModel {

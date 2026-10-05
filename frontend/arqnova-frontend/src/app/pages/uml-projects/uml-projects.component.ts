@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnDestroy, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { Router } from '@angular/router';
@@ -14,7 +14,8 @@ type ProjectDraft = { name: string; description: string; status: UmlProjectStatu
   templateUrl: './uml-projects.component.html',
   styleUrls: ['./uml-projects.component.scss', './uml-projects.actions.scss']
 })
-export class UmlProjectsComponent {
+export class UmlProjectsComponent implements OnDestroy {
+  private readonly refreshInterval: number;
   projects = signal<UmlProject[]>([]);
   search = signal('');
   statusFilter = signal<'TODOS' | UmlProjectStatus>('TODOS');
@@ -42,7 +43,10 @@ export class UmlProjectsComponent {
   constructor(private readonly store: UmlProjectStoreService, private readonly router: Router) {
     this.store.migrateLegacyModel();
     this.refresh();
+    this.refreshInterval=window.setInterval(()=>this.refresh(false),5000);
   }
+
+  ngOnDestroy() { window.clearInterval(this.refreshInterval); }
 
   openCreate() { this.editingId.set(null); this.draft = this.emptyDraft(); this.error.set(''); this.modalOpen.set(true); }
   openEdit(project: UmlProject) { this.editingId.set(project.id); this.draft = { name: project.name, description: project.description, status: project.status }; this.error.set(''); this.modalOpen.set(true); }
@@ -93,6 +97,6 @@ export class UmlProjectsComponent {
   ownerLabel(project: UmlProject) { return project.owner?.trim() || 'Proyecto local'; }
   formatDate(value: string) { const date=new Date(value);return Number.isNaN(date.getTime())?'No disponible':new Intl.DateTimeFormat('es-BO', { dateStyle: 'short', timeStyle: 'short' }).format(date); }
   trackProject(_: number, project: UmlProject) { return project.id; }
-  private refresh() { this.loading.set(true);this.store.list().subscribe({next:projects=>{this.projects.set(projects);this.loading.set(false);},error:()=>{this.projects.set(this.store.cachedList());this.loading.set(false);this.error.set('No se pudo consultar PostgreSQL. Se muestra la copia local sin sobrescribir datos remotos.');}}); }
+  private refresh(showLoading=true) { if(showLoading)this.loading.set(true);this.store.list().subscribe({next:projects=>{this.projects.set(projects);this.loading.set(false);this.error.set('');},error:()=>{if(showLoading)this.projects.set(this.store.cachedList());this.loading.set(false);this.error.set('No se pudo consultar PostgreSQL. Se muestra la copia local sin sobrescribir datos remotos.');}}); }
   private emptyDraft(): ProjectDraft { return { name: '', description: '', status: 'EN_EDICION' }; }
 }

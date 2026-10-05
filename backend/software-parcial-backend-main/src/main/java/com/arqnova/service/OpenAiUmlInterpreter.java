@@ -7,20 +7,21 @@ import com.arqnova.dto.request.UmlAiCommandRequest;
 import com.arqnova.dto.response.UmlAiCommandResponse;
 import com.arqnova.dto.response.UmlAiOperationResponse;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
-import java.net.URLEncoder;
+
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
+
 import java.text.Normalizer;
 import java.time.Duration;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
+
+
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -29,36 +30,43 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
+
 import org.springframework.web.multipart.MultipartFile;
 
 @Slf4j
 @Service
-public class GeminiUmlInterpreter {
-    private static final int MAX_ATTEMPTS = 4;
-    private static final long MAX_RETRY_AFTER_MS = 30_000L;
-    private static final Set<Integer> TRANSIENT_HTTP_CODES = Set.of(408, 429, 500, 502, 503, 504);
+public class OpenAiUmlInterpreter {
     private static final Set<String> OPERATIONS = Set.of("CLASS_CREATE", "CLASS_UPDATE", "CLASS_DELETE",
-            "ATTRIBUTE_CREATE", "ATTRIBUTE_UPDATE", "ATTRIBUTE_DELETE", "RELATION_CREATE", "RELATION_UPDATE", "RELATION_DELETE");
+            "ATTRIBUTE_CREATE", "ATTRIBUTE_UPDATE", "ATTRIBUTE_DELETE",
+            "METHOD_CREATE", "METHOD_UPDATE", "METHOD_DELETE",
+            "RELATION_CREATE", "RELATION_UPDATE", "RELATION_DELETE");
     private static final Set<String> RELATION_TYPES = Set.of("association", "aggregation", "composition", "inheritance", "dependency");
     private static final String MULTIPLICITY = "^(\\*|\\d+|\\d+\\.\\.(\\d+|\\*))$";
 
     private final ObjectMapper mapper;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
-    @Value("${app.gemini.api-key:}") private String apiKey;
-    @Value("${app.gemini.model:gemini-3.8-flash}") private String model;
-    @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com/v1beta}") private String baseUrl;
-    @Value("${app.gemini.timeout-seconds:25}") private long timeoutSeconds;
-    @Value("${app.gemini.retry-base-ms:1000}") private long retryBaseMs;
+    @Value("${app.openai.api-key:}") private String apiKey;
+    @Value("${app.openai.model:gpt-6.1-sol}") private String model;
+    @Value("${app.openai.image-model:}") private String imageModel;
+    @Value("${app.openai.base-url:https://api.openai.com/v1}") private String baseUrl;
+    @Value("${app.openai.timeout-seconds:45}") private long timeoutSeconds;
+    @Value("${app.openai.reasoning-effort:low}") private String reasoningEffort;
 
-    public GeminiUmlInterpreter(ObjectMapper mapper) { this.mapper = mapper; }
+    public OpenAiUmlInterpreter(ObjectMapper mapper) { this.mapper = mapper; }
 
     public boolean isConfigured() { return apiKey != null && !apiKey.isBlank(); }
 
+    private String visionModel() {
+        return imageModel == null || imageModel.isBlank() ? model : imageModel.trim();
+    }
+
     public static class ProviderException extends IllegalStateException {
         public final int httpStatus;
-        public ProviderException(int status) { super("Gemini rechazó la solicitud"); this.httpStatus = status; }
+        public ProviderException(int status) {
+            super("OpenAI rechazó la solicitud (HTTP " + status + ")");
+            this.httpStatus = status;
+        }
     }
 
     public Map<String, Object> analyzeImage(MultipartFile image) throws Exception {
@@ -70,27 +78,37 @@ public class GeminiUmlInterpreter {
         if (image.getSize() > 10L * 1024 * 1024) throw new IllegalArgumentException("La imagen no puede superar 10 MB.");
         String prompt = """
                 Analiza esta imagen únicamente como diagrama de clases UML. Devuelve JSON conforme al schema.
-                Extrae solo elementos visibles con evidencia suficiente: clases, atributos, tipos, relaciones y multiplicidades.
+                Extrae todos los elementos visibles: clases, atributos, métodos, relaciones y multiplicidades. Revisa el diagrama completo, no solo las primeras líneas.
+                El compartimento inferior de una clase contiene métodos aunque estén escritos sin paréntesis. Conserva los nombres legibles; no inventes parámetros ni tipos de retorno.
+                Devuelve x e y como posición de la esquina superior izquierda de cada clase, normalizada entre 0 y 1 respecto a la imagen; null si no se puede ubicar.
+                Recorre cada línea desde un extremo hasta el otro, incluso si tiene codos o cambia de dirección. No omitas una relación por no ver una multiplicidad.
+                Rombo negro/relleno = composition; rombo hueco = aggregation; triángulo hueco = inheritance. En composición/agregación, sourceClassName es la clase junto al rombo, y targetClassName la otra clase. Conserva la etiqueta de la línea.
+                Si la multiplicidad no está escrita en un extremo, usa cadena vacía en ese extremo y añade una advertencia; no descartes la relación.
                 No inventes texto ilegible. Para cualquier incertidumbre agrega una advertencia en español.
                 Conserva nombres de atributos legibles aunque no tengan tipo escrito: devuelve type=null.
                 No deduzcas tipos ni PK a partir del nombre del atributo.
                 Si no hay al menos una clase UML reconocible devuelve status=ERROR y explica el problema.
                 Usa tipos de relación: association, aggregation, composition, inheritance o dependency.
                 Usa multiplicidades UML como 1, 0..1, 0..*, 1..* o *.
+                Si una clase está unida mediante línea discontinua al centro de una asociación, es una clase de asociación: inclúyela en classes con sus atributos visibles y escribe su nombre exacto en associationClassName de esa relación. No la trates como clase independiente.
+                Si no existe esa clase vinculada, deja associationClassName vacío. No inventes nombres ni atributos.
                 isPrimaryKey solo puede ser true cuando la imagen lo indique explícitamente mediante PK, clave o un marcador inequívoco.
                 """;
-        Map<String,Object> body = Map.of(
-                "contents", List.of(Map.of("role", "user", "parts", List.of(
-                        Map.of("text", prompt),
-                        Map.of("inlineData", Map.of("mimeType", mime, "data", Base64.getEncoder().encodeToString(image.getBytes())))))),
-                "generationConfig", Map.of("temperature", 0.1, "responseMimeType", "application/json", "responseJsonSchema", imageSchema()));
-        String endpoint = baseUrl + "/models/" + URLEncoder.encode(model, StandardCharsets.UTF_8) + ":generateContent";
-        HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(timeoutSeconds))
-                .header("Content-Type", "application/json").header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
-        HttpResponse<String> response = sendWithRetry(request);
-        JsonNode root = mapper.readTree(response.body());
-        String json = root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
+        OpenAiRequestTrace trace = new OpenAiRequestTrace();
+        long startedAt = System.nanoTime();
+        String json;
+        try {
+            json = sendOpenAi(prompt, imageSchema(), "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(image.getBytes()), visionModel(), trace);
+            log.info("OpenAI CU8 HTTP completado: durationMs={} attempts={} status={}",
+                    Duration.ofNanos(System.nanoTime() - startedAt).toMillis(), trace.attempts, 200);
+        } catch (Exception error) {
+            String errorType = error instanceof HttpTimeoutException ? "TIMEOUT"
+                    : error instanceof ProviderException provider ? "HTTP_" + provider.httpStatus
+                    : error.getClass().getSimpleName();
+            log.warn("OpenAI CU8 HTTP falló: durationMs={} attempts={} errorType={}",
+                    Duration.ofNanos(System.nanoTime() - startedAt).toMillis(), trace.attempts, errorType);
+            throw error;
+        }
         if (json.isBlank()) throw new IllegalStateException("No se obtuvo un resultado del reconocimiento.");
         Map<String,Object> raw = mapper.readValue(json, new TypeReference<>() {});
         if (!Set.of("READY","ERROR").contains(String.valueOf(raw.get("status")))
@@ -106,9 +124,12 @@ public class GeminiUmlInterpreter {
                 Interpreta español natural y permite varias operaciones ordenadas. No inventes elementos existentes.
                 Si falta información esencial o hay ambigüedad, status=CLARIFICATION, operations=[] y formula clarificationQuestion.
                 Tipos permitidos: CLASS_CREATE, CLASS_UPDATE, CLASS_DELETE, ATTRIBUTE_CREATE, ATTRIBUTE_UPDATE,
-                ATTRIBUTE_DELETE, RELATION_CREATE, RELATION_UPDATE, RELATION_DELETE.
+                ATTRIBUTE_DELETE, METHOD_CREATE, METHOD_UPDATE, METHOD_DELETE,
+                RELATION_CREATE, RELATION_UPDATE, RELATION_DELETE.
                 Para crear clase usa target.className y parameters.attributes=[{name,type,isPrimaryKey}].
-                Para atributos usa target.className y target.attributeName. Para relaciones usa target.sourceClassName y target.targetClassName.
+                Para atributos usa target.className y target.attributeName.
+                Para métodos usa target.className y target.methodName; parameters puede incluir name, parameters y returnType.
+                Para relaciones usa target.sourceClassName y target.targetClassName.
                 Tipos de relación: association, aggregation, composition, inheritance, dependency.
                 Multiplicidades válidas: *, número, n..m o n..*.
                 Reconoce expresiones como entidad/clase, atributo/campo, identificador/PK, uno a muchos, renombrar y relacionar.
@@ -119,103 +140,96 @@ public class GeminiUmlInterpreter {
                 %s
                 """.formatted(mapper.writeValueAsString(request.getModel()), request.getInstruction());
 
-        Map<String, Object> body = Map.of(
-                "contents", List.of(Map.of("role", "user", "parts", List.of(Map.of("text", prompt)))),
-                "generationConfig", Map.of("temperature", 0.1, "responseMimeType", "application/json", "responseJsonSchema", schema())
-        );
-        String endpoint = baseUrl + "/models/" + URLEncoder.encode(model, StandardCharsets.UTF_8) + ":generateContent";
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(timeoutSeconds))
-                .header("Content-Type", "application/json").header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
-        HttpResponse<String> response = sendWithRetry(httpRequest);
-        log.debug("Gemini UML respondió HTTP {} usando el modelo {} y provider=GEMINI",
-                response.statusCode(), model);
-        JsonNode root = mapper.readTree(response.body());
-        String json = root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
-        if (json.isBlank()) throw new IllegalStateException("Gemini devolvió una respuesta vacía");
-        log.debug("Gemini UML JSON estructurado bruto (modelo={}): {}", model, json);
+        String json = sendOpenAi(prompt, schema(), null, model, null);
+        if (json.isBlank()) throw new IllegalStateException("OpenAi devolvió una respuesta vacía");
+        log.debug("OpenAI UML JSON estructurado bruto (modelo={}): {}", model, json);
         try {
             Map<String, Object> raw = mapper.readValue(json, new TypeReference<>() {});
             UmlAiCommandResponse result = validate(raw, request.getModel());
             if ("ERROR".equals(result.getStatus())) {
-                log.warn("Gemini UML produjo una salida rechazada por validación (modelo={}): {}",
+                log.warn("OpenAI UML produjo una salida rechazada por validación (modelo={}): {}",
                         model, result.getMessage());
             }
             return result;
         } catch (RuntimeException parsingError) {
-            log.warn("No se pudo parsear/validar la salida estructurada de Gemini usando el modelo {}: {}",
+            log.warn("No se pudo parsear/validar la salida estructurada de OpenAI usando el modelo {}: {}",
                     model, parsingError.getMessage());
             throw parsingError;
         }
     }
 
-    private HttpResponse<String> sendWithRetry(HttpRequest request) throws Exception {
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            HttpResponse<String> response;
-            try {
-                response = http.send(request, HttpResponse.BodyHandlers.ofString());
-            } catch (HttpTimeoutException timeout) {
-                log.warn("Gemini UML agotó el tiempo de espera usando el modelo {} (intento {}/{}, reintento={})",
-                        model, attempt, MAX_ATTEMPTS, attempt < MAX_ATTEMPTS);
-                if (attempt == MAX_ATTEMPTS) throw timeout;
-                Thread.sleep(backoffWithJitter(attempt));
-                continue;
-            }
-            int status = response.statusCode();
-            if (status >= 200 && status < 300) return response;
+    private static final class OpenAiRequestTrace { int attempts; }
 
-            boolean retryable = TRANSIENT_HTTP_CODES.contains(status);
-            log.warn("Gemini UML respondió HTTP {} usando el modelo {} (intento {}/{}, reintento={})",
-                    status, model, attempt, MAX_ATTEMPTS, retryable && attempt < MAX_ATTEMPTS);
-            if (!retryable || attempt == MAX_ATTEMPTS) {
-                throw new ProviderException(status);
-            }
-            Thread.sleep(status == 429 ? retryAfterOrBackoff(response, attempt) : backoffWithJitter(attempt));
+    private String sendOpenAi(String prompt, Map<String,Object> schema, String imageUrl, String selectedModel, OpenAiRequestTrace trace) throws Exception {
+        if (!isConfigured()) throw new IllegalStateException("OpenAI no está configurado.");
+        List<Map<String,Object>> content = new ArrayList<>();
+        content.add(Map.of("type", "input_text", "text", prompt + "\nUsa null para parámetros no aplicables; no los inventes."));
+        if (imageUrl != null) content.add(Map.of("type", "input_image", "image_url", imageUrl));
+        Map<String,Object> outputSchema = strictSchema(mapper.valueToTree(schema), imageUrl == null);
+        Map<String,Object> payload = Map.of("model", selectedModel,
+                "reasoning", Map.of("effort", reasoningEffort), "store", false,
+                "max_output_tokens", 8192,
+                "input", List.of(Map.of("role", "user", "content", content)),
+                "text", Map.of("format", Map.of("type", "json_schema", "name", imageUrl != null ? "uml_image" : "uml_command", "strict", true, "schema", outputSchema)));
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/responses"))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .header("Content-Type", "application/json").header("Authorization", "Bearer " + apiKey.trim())
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload))).build();
+        if (trace != null) trace.attempts++;
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) throw new ProviderException(response.statusCode());
+        JsonNode root = mapper.readTree(response.body());
+        if (!"completed".equals(root.path("status").asText())) throw new IllegalStateException("OpenAI no completó la respuesta.");
+        StringBuilder output = new StringBuilder();
+        for (JsonNode item : root.path("output")) for (JsonNode part : item.path("content")) {
+            if ("refusal".equals(part.path("type").asText())) throw new IllegalStateException("OpenAI no pudo interpretar la solicitud.");
+            if ("output_text".equals(part.path("type").asText())) output.append(part.path("text").asText());
         }
-        throw new IllegalStateException("Gemini no está disponible temporalmente");
+        if (output.isEmpty()) throw new IllegalStateException("OpenAI devolvió una respuesta vacía.");
+        return output.toString();
     }
 
-    private long backoffWithJitter(int failedAttempt) {
-        long baseDelay = Math.max(1L, retryBaseMs) * (1L << (failedAttempt - 1));
-        long jitterLimit = Math.max(1L, Math.min(500L, baseDelay / 4L));
-        return baseDelay + ThreadLocalRandom.current().nextLong(jitterLimit + 1L);
+    @SuppressWarnings("unchecked")
+    private Map<String,Object> strictSchema(JsonNode original, boolean command) {
+        Map<String,Object> schema = mapper.convertValue(original, new TypeReference<>() {});
+        if (command) {
+            Map<String,Object> props = new LinkedHashMap<>();
+            for (String name : List.of("name", "type", "parameters", "returnType", "label", "sourceMultiplicity", "targetMultiplicity", "associationClassName"))
+                props.put(name, Map.of("type", List.of("string", "null")));
+            props.put("isPrimaryKey", Map.of("type", List.of("boolean", "null")));
+            props.put("attributes", Map.of("type", List.of("array", "null"), "items", Map.of("type", "object", "properties", Map.of(
+                    "name", Map.of("type", "string"), "type", Map.of("type", "string"), "isPrimaryKey", Map.of("type", "boolean")))));
+            Map<String,Object> rootProps = (Map<String,Object>)schema.get("properties");
+            Map<String,Object> operations = (Map<String,Object>)rootProps.get("operations");
+            Map<String,Object> items = (Map<String,Object>)operations.get("items");
+            ((Map<String,Object>)items.get("properties")).put("parameters", new LinkedHashMap<>(Map.of("type", "object", "properties", props)));
+        }
+        schema = mapper.convertValue(schema, new TypeReference<>() {});
+        closeObjects(schema);
+        return schema;
     }
 
-    private long retryAfterOrBackoff(HttpResponse<?> response, int failedAttempt) {
-        String value = response.headers().firstValue("Retry-After").orElse("").trim();
-        if (value.isEmpty()) {
-            log.debug("Gemini no envió Retry-After; se usará backoff exponencial");
-            return backoffWithJitter(failedAttempt);
+    @SuppressWarnings("unchecked")
+    private void closeObjects(Map<String,Object> schema) {
+        if (schema.get("properties") instanceof Map<?,?> properties) {
+            schema.put("additionalProperties", false);
+            schema.put("required", new ArrayList<>(properties.keySet()));
+            for (Object property : properties.values()) closeObjects((Map<String,Object>)property);
         }
-        try {
-            long seconds = Long.parseLong(value);
-            long delay = Math.min(MAX_RETRY_AFTER_MS, Math.max(0L, seconds * 1_000L));
-            log.debug("Gemini envió Retry-After; espera aplicada={}ms", delay);
-            return delay;
-        } catch (NumberFormatException ignored) {
-            try {
-                long millis = Duration.between(ZonedDateTime.now(),
-                        ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)).toMillis();
-                long delay = Math.min(MAX_RETRY_AFTER_MS, Math.max(0L, millis));
-                log.debug("Gemini envió Retry-After; espera aplicada={}ms", delay);
-                return delay;
-            } catch (RuntimeException invalidHeader) {
-                log.warn("Gemini devolvió Retry-After inválido; se usará backoff exponencial");
-                return backoffWithJitter(failedAttempt);
-            }
-        }
+        if (schema.get("items") instanceof Map<?,?> items) closeObjects((Map<String,Object>)items);
     }
 
     private Map<String, Object> schema() {
         Map<String, Object> string = Map.of("type", "string");
         Map<String, Object> nullableString = Map.of("type", List.of("string", "null"));
         Map<String, Object> target = Map.of("type", "object", "properties", Map.of(
-                "className", nullableString, "attributeName", nullableString,
+                "className", nullableString, "attributeName", nullableString, "methodName", nullableString,
                 "sourceClassName", nullableString, "targetClassName", nullableString),
-                "required", List.of("className", "attributeName", "sourceClassName", "targetClassName"));
+                "required", List.of("className", "attributeName", "methodName", "sourceClassName", "targetClassName"));
         Map<String, Object> operationType = Map.of("type", "string", "enum", List.of(
                 "CLASS_CREATE", "CLASS_UPDATE", "CLASS_DELETE",
                 "ATTRIBUTE_CREATE", "ATTRIBUTE_UPDATE", "ATTRIBUTE_DELETE",
+                "METHOD_CREATE", "METHOD_UPDATE", "METHOD_DELETE",
                 "RELATION_CREATE", "RELATION_UPDATE", "RELATION_DELETE"));
         Map<String, Object> operation = Map.of("type", "object", "properties", Map.of(
                 "type", operationType, "target", target,
@@ -233,14 +247,16 @@ public class GeminiUmlInterpreter {
         Map<String,Object> attribute=Map.of("type","object","properties",Map.of(
                 "name",string,"type",Map.of("type",List.of("string","null")),"isPrimaryKey",Map.of("type","boolean")),
                 "required",List.of("name","type","isPrimaryKey"));
+        Map<String,Object> method=Map.of("type","object","properties",Map.of("name",string,"parameters",string,"returnType",Map.of("type",List.of("string","null"))));
+        Map<String,Object> coordinate=Map.of("type",List.of("number","null"));
         Map<String,Object> clazz=Map.of("type","object","properties",Map.of(
-                "name",string,"attributes",Map.of("type","array","items",attribute)),
-                "required",List.of("name","attributes"));
+                "name",string,"attributes",Map.of("type","array","items",attribute),"methods",Map.of("type","array","items",method),"x",coordinate,"y",coordinate),
+                "required",List.of("name","attributes","methods","x","y"));
         Map<String,Object> relation=Map.of("type","object","properties",Map.of(
                 "sourceClassName",string,"targetClassName",string,
                 "type",Map.of("type","string","enum",List.copyOf(RELATION_TYPES)),"label",string,
-                "sourceMultiplicity",string,"targetMultiplicity",string),
-                "required",List.of("sourceClassName","targetClassName","type","label","sourceMultiplicity","targetMultiplicity"));
+                "sourceMultiplicity",string,"targetMultiplicity",string,"associationClassName",string),
+                "required",List.of("sourceClassName","targetClassName","type","label","sourceMultiplicity","targetMultiplicity","associationClassName"));
         return Map.of("type","object","properties",Map.of(
                 "status",Map.of("type","string","enum",List.of("READY","ERROR")),
                 "classes",Map.of("type","array","items",clazz),
@@ -254,14 +270,25 @@ public class GeminiUmlInterpreter {
         String status=text(raw.get("status")).toUpperCase(Locale.ROOT),message=cleanText(raw.get("message"),500);
         List<String> warnings=new ArrayList<>();
         if(raw.get("warnings") instanceof List<?> list) for(Object item:list){String warning=cleanText(item,240);if(!warning.isBlank())warnings.add(warning);}
-        if(!"READY".equals(status)) return Map.of("status","ERROR","classes",List.of(),"relations",List.of(),"warnings",warnings,"message",message.isBlank()?"No se reconoció un diagrama UML legible.":message,"provider","GEMINI","model",model);
+        if(!"READY".equals(status)) return Map.of("status","ERROR","classes",List.of(),"relations",List.of(),"warnings",warnings,"message",message.isBlank()?"No se reconoció un diagrama UML legible.":message,"provider","OPENAI","model",visionModel());
         if(!(raw.get("classes") instanceof List<?> rawClasses)) throw new IllegalArgumentException("La respuesta visual no contiene clases válidas.");
         List<Map<String,Object>> classes=new ArrayList<>();
-        for(Object item:rawClasses){if(!(item instanceof Map<?,?> map))continue;String name=validName(map.get("name"));if(name==null||exists(classes,name)){warnings.add("Se descartó una clase con nombre ilegible o duplicado.");continue;}List<Map<String,Object>> attrs=validateImageAttributes(map.get("attributes"),warnings);classes.add(new LinkedHashMap<>(Map.of("name",name,"attributes",attrs)));}
-        if(classes.isEmpty()) return Map.of("status","ERROR","classes",List.of(),"relations",List.of(),"warnings",warnings,"message","No se reconoció ninguna clase UML con suficiente claridad.","provider","GEMINI","model",model);
+        for(Object item:rawClasses){if(!(item instanceof Map<?,?> map))continue;String name=validName(map.get("name"));if(name==null||exists(classes,name)){warnings.add("Se descartó una clase con nombre ilegible o duplicado.");continue;}List<Map<String,Object>> attrs=validateImageAttributes(map.get("attributes"),warnings);Map<String,Object> clazz=new LinkedHashMap<>(Map.of("name",name,"attributes",attrs,"methods",validateImageMethods(map.get("methods"),warnings)));for(String axis:List.of("x","y")){Object coordinate=map.get(axis);if(coordinate instanceof Number value&&Double.isFinite(value.doubleValue())&&value.doubleValue()>=0&&value.doubleValue()<=1)clazz.put(axis,value.doubleValue());}classes.add(clazz);}
+        if(classes.isEmpty()) return Map.of("status","ERROR","classes",List.of(),"relations",List.of(),"warnings",warnings,"message","No se reconoció ninguna clase UML con suficiente claridad.","provider","OPENAI","model",visionModel());
         List<Map<String,Object>> relations=new ArrayList<>();
-        if(raw.get("relations") instanceof List<?> rawRelations) for(Object item:rawRelations){if(!(item instanceof Map<?,?> any))continue;Map<String,Object> relation=(Map<String,Object>)any;Map<String,Object> source=findUnique(classes,text(relation.get("sourceClassName"))),target=findUnique(classes,text(relation.get("targetClassName")));Map<String,Object> clean=new LinkedHashMap<>();clean.put("sourceClassName",source==null?"":source.get("name"));clean.put("targetClassName",target==null?"":target.get("name"));clean.put("type",text(relation.get("type")));clean.put("label",cleanText(relation.get("label"),120));clean.put("sourceMultiplicity",text(relation.get("sourceMultiplicity")));clean.put("targetMultiplicity",text(relation.get("targetMultiplicity")));if(source==null||target==null||!validRelation(clean)){warnings.add("Se descartó una relación con extremos o multiplicidades poco claros.");continue;}relations.add(clean);}
-        Map<String,Object> result=new LinkedHashMap<>();result.put("status","READY");result.put("classes",classes);result.put("relations",relations);result.put("warnings",warnings);result.put("message",message.isBlank()?"Imagen analizada. Revisa el resultado antes de insertarlo.":message);result.put("provider","GEMINI");result.put("model",model);return result;
+        if(raw.get("relations") instanceof List<?> rawRelations) for(Object item:rawRelations){if(!(item instanceof Map<?,?> any))continue;Map<String,Object> relation=(Map<String,Object>)any;Map<String,Object> source=findUnique(classes,text(relation.get("sourceClassName"))),target=findUnique(classes,text(relation.get("targetClassName")));Map<String,Object> clean=new LinkedHashMap<>();clean.put("sourceClassName",source==null?"":source.get("name"));clean.put("targetClassName",target==null?"":target.get("name"));clean.put("type",text(relation.get("type")));clean.put("label",cleanText(relation.get("label"),120));clean.put("sourceMultiplicity",imageMultiplicity(relation.get("sourceMultiplicity"),warnings));clean.put("targetMultiplicity",imageMultiplicity(relation.get("targetMultiplicity"),warnings));if(source==null||target==null||!validRelation(clean)){warnings.add("Se descartó una relación con extremos o multiplicidades poco claros.");continue;}String associationClassName=text(relation.get("associationClassName"));Map<String,Object> associationClass=associationClassName.isBlank()?null:findUnique(classes,associationClassName);clean.put("associationClassName",associationClass==null?"":associationClass.get("name"));relations.add(clean);}
+        Map<String,Object> result=new LinkedHashMap<>();result.put("status","READY");result.put("classes",classes);result.put("relations",relations);result.put("warnings",warnings);result.put("message",message.isBlank()?"Imagen analizada. Revisa el resultado antes de insertarlo.":message);result.put("provider","OPENAI");result.put("model",visionModel());return result;
+    }
+
+    private String imageMultiplicity(Object value,List<String> warnings){
+        String multiplicity=text(value).replaceAll("\\s+", "").replaceAll("\\.{3,}","..");
+        if(multiplicity.isBlank()){warnings.add("Una multiplicidad no está indicada en la imagen; se usa 1 provisionalmente y puede editarse en el Inspector.");return "1";}
+        return multiplicity;
+    }
+    private List<Map<String,Object>> validateImageMethods(Object value,List<String> warnings){
+        List<Map<String,Object>> methods=new ArrayList<>();
+        if(value instanceof List<?> list)for(Object item:list){if(!(item instanceof Map<?,?> method))continue;String name=validName(method.get("name"));if(name==null||exists(methods,name)){warnings.add("Se descartó un método ilegible o duplicado.");continue;}String returnType=text(method.get("returnType"));methods.add(new LinkedHashMap<>(Map.of("name",name,"parameters",cleanText(method.get("parameters"),500),"returnType",returnType.isBlank()?"":returnType)));}
+        return methods;
     }
 
     @SuppressWarnings("unchecked")
@@ -270,11 +297,11 @@ public class GeminiUmlInterpreter {
         String message = cleanText(raw.get("message"), 500);
         String question = cleanText(raw.get("clarificationQuestion"), 300);
         if ("CLARIFICATION".equals(status)) {
-            if (question.isBlank()) return invalid("La aclaración de Gemini no contiene una pregunta.");
+            if (question.isBlank()) return invalid("La aclaración de OpenAI no contiene una pregunta.");
             return response(status, List.of(), question, message.isBlank() ? question : message);
         }
         if ("ERROR".equals(status)) return response(status, List.of(), null, message.isBlank() ? "No se pudo interpretar la instrucción." : message);
-        if (!"READY".equals(status)) return invalid("Gemini devolvió un estado no permitido.");
+        if (!"READY".equals(status)) return invalid("OpenAi devolvió un estado no permitido.");
         if (!(raw.get("operations") instanceof List<?> rawOperations) || rawOperations.isEmpty()) return invalid("La respuesta no contiene operaciones UML.");
 
         List<Map<String, Object>> classes = copyList(sourceModel.get("classes"));
@@ -284,9 +311,10 @@ public class GeminiUmlInterpreter {
             if (!(value instanceof Map<?, ?> any)) return invalid("Una operación tiene estructura inválida.");
             Map<String, Object> op = (Map<String, Object>) any;
             String type = text(op.get("type")).toUpperCase(Locale.ROOT);
-            if (!OPERATIONS.contains(type)) return invalid("Gemini propuso una operación UML no permitida.");
+            if (!OPERATIONS.contains(type)) return invalid("OpenAi propuso una operación UML no permitida.");
             Map<String, String> target = stringMap(op.get("target"));
             Map<String, Object> parameters = objectMap(op.get("parameters"));
+            parameters.values().removeIf(java.util.Objects::isNull);
             UmlAiOperationResponse resolved = resolve(type, target, parameters, classes, relations);
             if (resolved == null) return invalid("La operación contiene referencias inexistentes, ambiguas o valores inválidos.");
             operations.add(resolved);
@@ -303,7 +331,7 @@ public class GeminiUmlInterpreter {
                 targetId = "class-ai-" + UUID.randomUUID();
                 List<Map<String,Object>> attrs = validateAttributes(p.get("attributes")); if (attrs == null) return null;
                 p=new LinkedHashMap<>();p.put("name",name);p.put("id",targetId);p.put("attributes",attrs);
-                classes.add(new LinkedHashMap<>(Map.of("id", targetId, "name", name, "attributes", attrs))); elementType = "class";
+                classes.add(new LinkedHashMap<>(Map.of("id", targetId, "name", name, "attributes", attrs, "methods", new ArrayList<>()))); elementType = "class";
             }
             case "CLASS_UPDATE", "CLASS_DELETE" -> {
                 Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;targetId=text(clazz.get("id"));elementType="class";
@@ -317,6 +345,29 @@ public class GeminiUmlInterpreter {
                 Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;Map<String,Object> attr=findUnique(attributes(clazz),target.get("attributeName"));if(attr==null)return null;targetId=text(attr.get("id"));p.put("classId",clazz.get("id"));elementType="attribute";
                 if(type.equals("ATTRIBUTE_UPDATE")){Map<String,Object> clean=new LinkedHashMap<>();clean.put("classId",clazz.get("id"));if(p.containsKey("name")){String name=validName(p.get("name"));if(name==null)return null;clean.put("name",name);}if(p.containsKey("type")){String dataType=validType(p.get("type"));if(dataType==null)return null;clean.put("type",dataType);}if(p.containsKey("isPrimaryKey")){if(!(p.get("isPrimaryKey") instanceof Boolean))return null;clean.put("isPrimaryKey",p.get("isPrimaryKey"));}if(clean.size()==1)return null;p=clean;}
                 else {String deletedId=targetId;attributes(clazz).removeIf(item->deletedId.equals(text(item.get("id"))));p=new LinkedHashMap<>(Map.of("classId",clazz.get("id")));}
+            }
+            case "METHOD_CREATE" -> {
+                Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;
+                String name=validName(first(target.get("methodName"),p.get("name")));
+                String returnType=validType(p.getOrDefault("returnType","void"));
+                String parameters=cleanText(p.get("parameters"),500);
+                if(name==null||returnType==null||exists(methods(clazz),name))return null;
+                targetId="method-ai-"+UUID.randomUUID();
+                p=new LinkedHashMap<>();p.put("classId",clazz.get("id"));p.put("name",name);p.put("parameters",parameters);p.put("returnType",returnType);
+                methods(clazz).add(new LinkedHashMap<>(Map.of("id",targetId,"name",name,"parameters",parameters,"returnType",returnType)));
+                elementType="method";
+            }
+            case "METHOD_UPDATE", "METHOD_DELETE" -> {
+                Map<String,Object> clazz=findUnique(classes,target.get("className"));if(clazz==null)return null;
+                Map<String,Object> method=findUnique(methods(clazz),target.get("methodName"));if(method==null)return null;
+                targetId=text(method.get("id"));elementType="method";
+                if(type.equals("METHOD_UPDATE")){
+                    Map<String,Object> clean=new LinkedHashMap<>();clean.put("classId",clazz.get("id"));
+                    if(p.containsKey("name")){String name=validName(p.get("name"));if(name==null)return null;Map<String,Object> duplicate=findUnique(methods(clazz),name);if(duplicate!=null&&!targetId.equals(text(duplicate.get("id"))))return null;clean.put("name",name);}
+                    if(p.containsKey("parameters"))clean.put("parameters",cleanText(p.get("parameters"),500));
+                    if(p.containsKey("returnType")){String returnType=validType(p.get("returnType"));if(returnType==null)return null;clean.put("returnType",returnType);}
+                    if(clean.size()==1)return null;method.putAll(clean);p=clean;
+                }else{String deletedId=targetId;methods(clazz).removeIf(item->deletedId.equals(text(item.get("id"))));p=new LinkedHashMap<>(Map.of("classId",clazz.get("id")));}
             }
             case "RELATION_CREATE" -> {
                 Map<String,Object> source=findUnique(classes,target.get("sourceClassName")),dest=findUnique(classes,target.get("targetClassName"));if(source==null||dest==null)return null;targetId="rel-ai-"+UUID.randomUUID();Map<String,Object> clean=new LinkedHashMap<>();clean.put("sourceId",source.get("id"));clean.put("targetId",dest.get("id"));clean.put("type",p.getOrDefault("type","association"));clean.put("label",cleanText(p.get("label"),120));clean.put("sourceMultiplicity",p.getOrDefault("sourceMultiplicity","1"));clean.put("targetMultiplicity",p.getOrDefault("targetMultiplicity","0..*"));if(!validRelation(clean))return null;clean.put("id",targetId);p=clean;relations.add(new LinkedHashMap<>(p));elementType="relation";
@@ -356,6 +407,7 @@ public class GeminiUmlInterpreter {
     private boolean exists(List<Map<String,Object>> list,String name){return list.stream().anyMatch(i->normalize(text(i.get("name"))).equals(normalize(name)));}
     private Map<String,Object> findRelation(List<Map<String,Object>> list,String a,String b){List<Map<String,Object>> found=list.stream().filter(i->(a.equals(text(i.get("sourceId")))&&b.equals(text(i.get("targetId"))))||(b.equals(text(i.get("sourceId")))&&a.equals(text(i.get("targetId"))))).toList();return found.size()==1?found.get(0):null;}
     @SuppressWarnings("unchecked") private List<Map<String,Object>> attributes(Map<String,Object> clazz){return (List<Map<String,Object>>)clazz.computeIfAbsent("attributes",k->new ArrayList<>());}
+    @SuppressWarnings("unchecked") private List<Map<String,Object>> methods(Map<String,Object> clazz){return (List<Map<String,Object>>)clazz.computeIfAbsent("methods",k->new ArrayList<>());}
     @SuppressWarnings("unchecked") private List<Map<String,Object>> copyList(Object value){return value instanceof List<?>?mapper.convertValue(value,new TypeReference<>(){}):new ArrayList<>();}
     @SuppressWarnings("unchecked") private Map<String,Object> objectMap(Object value){return value instanceof Map<?,?>?new LinkedHashMap<>((Map<String,Object>)value):new LinkedHashMap<>();}
     @SuppressWarnings("unchecked") private Map<String,String> stringMap(Object value){Map<String,String> result=new LinkedHashMap<>();if(value instanceof Map<?,?> map)map.forEach((k,v)->{if(v!=null)result.put(text(k),cleanText(v,80));});return result;}
@@ -364,5 +416,5 @@ public class GeminiUmlInterpreter {
     private String cleanText(Object value,int max){String text=text(value).replaceAll("[\\p{Cntrl}&&[^\\n\\t]]","");return text.length()>max?text.substring(0,max):text;}
     private String normalize(String value){return Normalizer.normalize(value,Normalizer.Form.NFD).replaceAll("\\p{M}","").toLowerCase(Locale.ROOT);}
     private UmlAiCommandResponse invalid(String message){return response("ERROR",List.of(),null,message);}
-    private UmlAiCommandResponse response(String status,List<UmlAiOperationResponse> operations,String question,String message){UmlAiOperationResponse first=operations.isEmpty()?null:operations.get(0);return UmlAiCommandResponse.builder().status(status).operations(operations).clarificationQuestion(question).message(message).interpreter("GEMINI").fallbackUsed(false).operation(first==null?null:first.getType()).targetId(first==null?null:first.getTargetId()).parameters(first==null?Map.of():first.getParameters()).build();}
+    private UmlAiCommandResponse response(String status,List<UmlAiOperationResponse> operations,String question,String message){UmlAiOperationResponse first=operations.isEmpty()?null:operations.get(0);return UmlAiCommandResponse.builder().status(status).operations(operations).clarificationQuestion(question).message(message).interpreter("OPENAI").fallbackUsed(false).operation(first==null?null:first.getType()).targetId(first==null?null:first.getTargetId()).parameters(first==null?Map.of():first.getParameters()).build();}
 }

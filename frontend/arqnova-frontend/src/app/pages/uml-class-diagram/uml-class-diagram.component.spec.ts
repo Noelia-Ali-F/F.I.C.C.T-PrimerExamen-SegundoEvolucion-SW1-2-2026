@@ -54,11 +54,40 @@ describe('UmlClassDiagramComponent', () => {
     expect(component.generatedBackend()).toBeNull();
   });
 
+  it('copia el enlace colaborativo usando el respaldo compatible con HTTP', async () => {
+    component.collaborativeSession.set({ sessionId: 's1', projectId: 'project-test', projectName: 'Prueba', inviteCode: 'ABC123', model: component.model() });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('Contexto no seguro')) } });
+    const copy = vi.fn(() => true);
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: copy });
+
+    await component.copyInvitation();
+
+    expect(copy).toHaveBeenCalledWith('copy');
+    expect(component.notice()).toEqual({ kind: 'success', text: 'Enlace de invitación copiado.' });
+    expect(document.querySelector('textarea')).toBeNull();
+  });
+
   it('crea una clase y la selecciona', () => {
     component.newClassName = 'Usuario';
     component.addClass();
     expect(component.classes()[0].name).toBe('Usuario');
     expect(component.selectedClass()?.name).toBe('Usuario');
+  });
+
+  it('permite editar y eliminar manualmente una clase desde el inspector', () => {
+    component.newClassName = 'Cliente'; component.addClass();
+    fixture.detectChanges();
+    const nameInput = fixture.nativeElement.querySelector('.inspector-section fieldset > input') as HTMLInputElement;
+    nameInput.value = 'Paciente';
+    nameInput.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(component.classes()[0].name).toBe('Paciente');
+    expect(fixture.nativeElement.querySelector('.class-card')?.textContent).toContain('Paciente');
+
+    (fixture.nativeElement.querySelector('.inspector-section .delete-button') as HTMLButtonElement).click();
+    expect(component.classes()).toHaveLength(1);
+    component.confirmDialog();
+    expect(component.classes()).toHaveLength(0);
   });
 
   it('CU7 renderiza usuario, acción, elemento y hora de una actividad colaborativa', () => {
@@ -170,6 +199,27 @@ describe('UmlClassDiagramComponent', () => {
     expect(component.selectedClass()?.methods).toHaveLength(0);
   });
 
+  it('actualiza inmediatamente atributos y métodos visibles en el lienzo', () => {
+    component.newClassName = 'Turno'; component.addClass();
+    component.attributeDraft = { id: '', name: 'id', type: 'String', isPrimaryKey: false }; component.saveAttribute();
+    component.methodDraft = { id: '', name: 'reservar', parameters: '', returnType: 'void' }; component.saveMethod();
+    fixture.detectChanges();
+    let card = fixture.nativeElement.querySelector('.class-card') as HTMLElement;
+    expect(card.textContent).toContain('id: String');
+    expect(card.textContent).toContain('reservar(): void');
+
+    component.editAttribute(component.selectedClass()!.attributes[0]);
+    component.attributeDraft.type = 'Integer'; component.attributeDraft.isPrimaryKey = true; component.saveAttribute();
+    component.editMethod(component.selectedClass()!.methods[0]);
+    component.methodDraft.name = 'confirmar'; component.methodDraft.returnType = 'Boolean'; component.saveMethod();
+    fixture.detectChanges();
+    card = fixture.nativeElement.querySelector('.class-card') as HTMLElement;
+    expect(card.textContent).toContain('PK id: Integer');
+    expect(card.textContent).toContain('confirmar(): Boolean');
+    expect(card.textContent).not.toContain('id: String');
+    expect(card.textContent).not.toContain('reservar(): void');
+  });
+
   it('usa String por defecto y limita la edición manual a tipos compatibles con CU9', () => {
     component.newClassName='Profesional'; component.addClass();
     expect(component.attributeDraft.type).toBe('String');
@@ -243,16 +293,85 @@ describe('UmlClassDiagramComponent', () => {
     component.addRelation(); fixture.detectChanges();
 
     const multiplicities = fixture.nativeElement.querySelectorAll('.inspector-section .coordinate-grid input') as NodeListOf<HTMLInputElement>;
-    multiplicities[1].value = '1..*';
-    multiplicities[1].dispatchEvent(new Event('input'));
+    for (const partial of ['1', '1.', '1..', '1..*']) {
+      multiplicities[1].value = partial;
+      multiplicities[1].dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+    expect(component.selectedRelation()?.targetMultiplicity).toBe('0..*');
+    multiplicities[1].dispatchEvent(new Event('change'));
     fixture.detectChanges();
     expect(component.selectedRelation()?.targetMultiplicity).toBe('1..*');
 
     multiplicities[1].value = 'muchos';
-    multiplicities[1].dispatchEvent(new Event('input'));
+    multiplicities[1].dispatchEvent(new Event('change'));
     fixture.detectChanges();
     expect(component.selectedRelation()?.targetMultiplicity).toBe('1..*');
     expect(component.notice()?.text).toContain('Usa multiplicidades');
+  });
+
+  it('crea manualmente una asociación UML simple con multiplicidades en ambos extremos', () => {
+    component.newClassName = 'Profesor'; component.addClass(); const profesor = component.selectedClass()!;
+    component.newClassName = 'Curso'; component.addClass(); const curso = component.selectedClass()!;
+    component.relationDraft = { from: profesor.id, to: curso.id, type: 'association', label: 'imparte', fromMultiplicity: '1', toMultiplicity: '0..*' };
+    component.addRelation(); fixture.detectChanges();
+
+    expect(component.relations()).toHaveLength(1);
+    expect(component.relations()[0]).toEqual(expect.objectContaining({ sourceId: profesor.id, targetId: curso.id,
+      type: 'association', label: 'imparte', sourceMultiplicity: '1', targetMultiplicity: '0..*' }));
+    const relation = fixture.nativeElement.querySelector('svg.relations g.relation') as SVGGElement;
+    expect(relation).toBeTruthy();
+    expect(relation.querySelector('line.relation-line')?.getAttribute('marker-start')).toBeNull();
+    expect(relation.querySelector('line.relation-line')?.getAttribute('marker-end')).toBeNull();
+    expect([...relation.querySelectorAll('text.multiplicity')].map(item => item.textContent?.trim())).toEqual(['1', '0..*']);
+    expect(relation.querySelector('text.relation-label')?.textContent?.trim()).toBe('imparte');
+    const verbInput = fixture.nativeElement.querySelector('.inspector-section fieldset > input') as HTMLInputElement;
+    verbInput.value = 'enseña';
+    verbInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(component.selectedRelation()?.label).toBe('enseña');
+    expect(fixture.nativeElement.querySelector('svg.relations text.relation-label')?.textContent?.trim()).toBe('enseña');
+  });
+
+  it('crea y enlaza una clase de asociación editable cuando ambos extremos son múltiples', () => {
+    component.newClassName='Reserva'; component.addClass(); const reserva=component.selectedClass()!;
+    component.newClassName='Servicio'; component.addClass(); const servicio=component.selectedClass()!;
+    component.associationClassName='DetalleReserva';
+    component.relationDraft={from:reserva.id,to:servicio.id,type:'association',label:'incluye',fromMultiplicity:'0..*',toMultiplicity:'1..*'};
+    component.addRelation(); fixture.detectChanges();
+    const relation=component.relations()[0], linked=component.classes().find(item=>item.id===relation.associationClassId);
+    expect(linked).toEqual(expect.objectContaining({name:'DetalleReserva',stereotype:'Clase de asociación'}));
+    expect(fixture.nativeElement.querySelector('line.association-class-connector')).toBeTruthy();
+    component.selectClass(linked!); component.attributeDraft={id:'attr-cantidad',name:'Cantidad',type:'Integer',isPrimaryKey:false}; component.saveAttribute();
+    expect(component.classes().find(item=>item.id===linked!.id)?.attributes).toEqual(expect.arrayContaining([expect.objectContaining({name:'Cantidad'})]));
+    const stored=JSON.parse(localStorage.getItem('uml-projects-v1')!)[0].model;
+    expect(stored.relations[0].associationClassId).toBe(linked!.id);
+  });
+
+  it('crea clase de asociación desde foto con multiplicidades 1..* a 1..*', () => {
+    component.imageAnalysis.set({status:'READY',provider:'OPENAI',model:'test',message:'ok',warnings:[],classes:[
+      {name:'Alumno',attributes:[]},{name:'Materia',attributes:[]}
+    ],relations:[{sourceClassName:'Alumno',targetClassName:'Materia',type:'association',label:'cursa',sourceMultiplicity:'1..*',targetMultiplicity:'1..*'}]});
+    component.generateImageResult(); fixture.detectChanges();
+    const relation=component.relations()[0], linked=component.classes().find(item=>item.id===relation.associationClassId);
+    expect(linked?.stereotype).toBe('Clase de asociación');
+    expect(fixture.nativeElement.querySelector('line.association-class-connector')).toBeTruthy();
+  });
+
+  it('vincula Detalle y conserva sus atributos al importar una foto de Venta y Producto', () => {
+    component.imageAnalysis.set({status:'READY',provider:'OPENAI',model:'test',message:'ok',warnings:[],classes:[
+      {name:'Venta',attributes:[{name:'id',type:'',isPrimaryKey:false}]},
+      {name:'Producto',attributes:[{name:'nombre',type:'',isPrimaryKey:false}]},
+      {name:'Detalle',attributes:[{name:'cantidad',type:'',isPrimaryKey:false},{name:'PrecioUnit',type:'',isPrimaryKey:false}]}
+    ],relations:[{sourceClassName:'Venta',targetClassName:'Producto',type:'association',label:'',sourceMultiplicity:'*',targetMultiplicity:'1..*'}]});
+    component.generateImageResult(); fixture.detectChanges();
+    expect(component.classes()).toHaveLength(3);
+    const relation=component.relations()[0], detail=component.classes().find(item=>item.id===relation.associationClassId);
+    expect(detail).toEqual(expect.objectContaining({name:'Detalle',stereotype:'Clase de asociación'}));
+    expect(detail?.attributes.map(item=>item.name)).toEqual(['cantidad','PrecioUnit']);
+    expect(fixture.nativeElement.querySelector('line.association-class-connector')).toBeTruthy();
+    const stored=JSON.parse(localStorage.getItem('uml-projects-v1')!)[0].model;
+    expect(stored.classes.find((item:any)=>item.id===relation.associationClassId).attributes).toHaveLength(2);
   });
 
   it('normaliza atributos almacenados legacy sin inferir PK por el nombre', () => {
@@ -425,10 +544,22 @@ describe('UmlClassDiagramComponent', () => {
     expect(JSON.parse(localStorage.getItem('uml-projects-v1')!)[0].model.classes[0].methods).toHaveLength(0);
   });
 
+  it('inserta composiciones reconocidas con métodos y ubicación de la imagen, sin depender del nombre',()=>{
+    component.imageAnalysis.set({status:'READY',provider:'OPENAI',model:'test',message:'ok',warnings:[],classes:[
+      {name:'Biblioteca',attributes:[],methods:[{name:'Buscar',parameters:'',returnType:''}],x:0.1,y:0.1},
+      {name:'Préstamo',attributes:[],x:0.25,y:0.65}
+    ],relations:[{sourceClassName:'Biblioteca',targetClassName:'Préstamo',type:'composition',label:'registra',sourceMultiplicity:'1..*',targetMultiplicity:'1'}]});
+    component.generateImageResult();fixture.detectChanges();
+    const whole=component.classes().find(c=>c.name==='Biblioteca')!,part=component.classes().find(c=>c.name==='Préstamo')!;
+    expect(whole.methods[0].name).toBe('Buscar');expect(whole.y).toBeLessThan(part.y);expect(whole.x).toBeLessThan(part.x);
+    expect(component.relations()[0]).toEqual(expect.objectContaining({type:'composition',sourceId:whole.id,targetId:part.id,label:'registra'}));
+    expect(fixture.nativeElement.querySelector('line.relation-line').getAttribute('marker-start')).toBe('url(#diamond-composition)');
+  });
+
   it('inserta el reconocimiento de imagen como UML editable y lo persiste sin sobrescribir', () => {
     component.newClassName = 'Usuario'; component.addClass();
     component.imageModalOpen.set(true);
-    component.imageAnalysis.set({ status: 'READY', provider: 'GEMINI', model: 'gemini-3.8-flash', message: 'ok', warnings: [], classes: [
+    component.imageAnalysis.set({ status: 'READY', provider: 'OPENAI', model: 'gpt-6.1-sol', message: 'ok', warnings: [], classes: [
       { name: 'Usuario', attributes: [{ name: 'duplicado', type: 'String', isPrimaryKey: false }] },
       { name: 'Pedido', attributes: [{ name: 'id', type: 'Long', isPrimaryKey: true }, { name: 'fecha', type: 'Date', isPrimaryKey: false }] }
     ], relations: [{ sourceClassName: 'Usuario', targetClassName: 'Pedido', type: 'association', label: 'realiza', sourceMultiplicity: '1', targetMultiplicity: '0..*' }] });
@@ -447,7 +578,7 @@ describe('UmlClassDiagramComponent', () => {
   });
 
   it('CU7 conserva ocho atributos sin tipo al insertar y normalizar, editables en Inspector', () => {
-    component.imageAnalysis.set({status:'READY',provider:'GEMINI',model:'test',message:'ok',warnings:[],classes:[
+    component.imageAnalysis.set({status:'READY',provider:'OPENAI',model:'test',message:'ok',warnings:[],classes:[
       {name:'Paciente',attributes:['Id','nombre','Documento','Telefono'].map(name=>({name,type:'',isPrimaryKey:false}))},
       {name:'Turno',attributes:['Id','FechaHora','Estado','motivo'].map(name=>({name,type:'',isPrimaryKey:false}))}
     ],relations:[{sourceClassName:'Paciente',targetClassName:'Turno',type:'association',label:'reserva',sourceMultiplicity:'1',targetMultiplicity:'0..*'}]});
@@ -477,20 +608,55 @@ describe('UmlClassDiagramComponent', () => {
     expect(component.classes()).toHaveLength(2);
   });
 
+  it('muestra las nuevas multiplicidades por IA y crea la clase de asociación al pasar a muchos a muchos', () => {
+    component.newClassName = 'Venta'; component.addClass();
+    component.newClassName = 'Producto'; component.addClass();
+    const [venta, producto] = component.classes();
+    (component as any).executeAiCommand({ status: 'READY', operation: 'RELATION_CREATE', parameters: {
+      sourceId: venta.id, targetId: producto.id, sourceMultiplicity: '1', targetMultiplicity: '0..*', type: 'association'
+    }, message: 'ok' }, () => {});
+    const relationId = component.relations()[0].id;
+
+    (component as any).executeAiCommand({ status: 'READY', operation: 'RELATION_UPDATE', targetId: relationId, parameters: {
+      sourceMultiplicity: '1..*', targetMultiplicity: '0..*'
+    }, message: 'ok' }, () => {});
+
+    const relation = component.relations()[0];
+    expect(component.relations()).toHaveLength(1);
+    expect(relation).toEqual(expect.objectContaining({ sourceMultiplicity: '1..*', targetMultiplicity: '0..*' }));
+    expect(component.classes().find(item => item.id === relation.associationClassId)).toEqual(expect.objectContaining({
+      name: 'DetalleVentaProducto', stereotype: 'Clase de asociación', attributes: [], methods: []
+    }));
+    fixture.detectChanges();
+    const canvasRelation = fixture.nativeElement.querySelector('svg.relations g.relation') as SVGGElement;
+    expect([...canvasRelation.querySelectorAll('text.multiplicity')].map(item => item.textContent?.trim())).toEqual(['1..*', '0..*']);
+  });
+
   it('ejecuta operaciones IA compuestas en orden conservando los IDs resueltos', () => {
     component.newClassName = 'Pedido'; component.addClass(); const pedido = component.classes()[0];
     const commands: any[] = [
       { status: 'READY', operation: 'CLASS_CREATE', targetId: 'class-ai-cliente', parameters: { id: 'class-ai-cliente', name: 'Cliente', attributes: [{ id: 'attr-ai-id', name: 'id', type: 'Long', isPrimaryKey: true }] }, message: 'ok' },
-      { status: 'READY', operation: 'RELATION_CREATE', targetId: 'rel-ai-1', parameters: { id: 'rel-ai-1', sourceId: 'class-ai-cliente', targetId: pedido.id, type: 'association', sourceMultiplicity: '1', targetMultiplicity: '0..*' }, message: 'ok' }
+      { status: 'READY', operation: 'RELATION_CREATE', targetId: 'rel-ai-1', parameters: { id: 'rel-ai-1', sourceId: 'class-ai-cliente', targetId: pedido.id, type: 'association', sourceMultiplicity: '1', targetMultiplicity: '1..*' }, message: 'ok' }
     ];
     (component as any).executeAiCommands(commands, 0, () => {});
     expect(component.classes().find(item => item.id === 'class-ai-cliente')?.attributes[0]).toEqual(expect.objectContaining({ isPrimaryKey: true }));
-    expect(component.relations()[0]).toEqual(expect.objectContaining({ id: 'rel-ai-1', sourceId: 'class-ai-cliente', targetId: pedido.id }));
+    expect(component.relations()[0]).toEqual(expect.objectContaining({ id: 'rel-ai-1', sourceId: 'class-ai-cliente', targetId: pedido.id, sourceMultiplicity: '1', targetMultiplicity: '1..*' }));
+    fixture.detectChanges();
+    const relation = fixture.nativeElement.querySelector('svg.relations g.relation') as SVGGElement;
+    expect([...relation.querySelectorAll('text.multiplicity')].map(item => item.textContent?.trim())).toEqual(['1', '1..*']);
+  });
+
+  it('muestra ayuda flotante descriptiva en las acciones principales de la barra', () => {
+    const buttons=[...fixture.nativeElement.querySelectorAll('.toolbar button[data-tooltip]')] as HTMLButtonElement[];
+    expect(buttons.length).toBeGreaterThanOrEqual(8);
+    expect(buttons.every(button=>Boolean(button.dataset['tooltip']?.trim())&&Boolean(button.getAttribute('aria-label')))).toBe(true);
+    expect(buttons.find(button=>button.getAttribute('aria-label')==='Abrir Asistente IA')?.dataset['tooltip']).toContain('texto o voz');
+    expect(buttons.find(button=>button.getAttribute('aria-label')==='Guardar proyecto')?.dataset['tooltip']).toContain('Guardar');
   });
 
   it('envía automáticamente una transcripción final una sola vez por el mismo flujo de texto', async () => {
     const interpret = vi.spyOn((component as any).umlAi, 'interpret').mockReturnValue(of({
-      status: 'READY', interpreter: 'GEMINI', fallbackUsed: false, message: 'Mascota creada.',
+      status: 'READY', interpreter: 'OPENAI', fallbackUsed: false, message: 'Mascota creada.',
       operations: [{ type: 'CLASS_CREATE', targetId: 'mascota-ai', elementType: 'class', target: { className: 'Mascota' }, parameters: { id: 'mascota-ai', name: 'Mascota', attributes: [] } }]
     }));
     (component as any).voiceCaptureActive = true;
@@ -503,5 +669,168 @@ describe('UmlClassDiagramComponent', () => {
     expect(interpret).toHaveBeenCalledTimes(1);
     expect(interpret).toHaveBeenCalledWith('Crea una clase Mascota', expect.any(Object));
     expect(component.classes().find(item => item.name === 'Mascota')).toBeTruthy();
+  });
+
+  it('espera el final de una orden de voz larga antes de enviarla completa al intérprete de texto', async () => {
+    const instruction = 'Crea una clase Venta con atributos id y fecha y agrega el método calcularTotal y relaciona Venta con Producto de muchos a muchos';
+    const interpret = vi.spyOn((component as any).umlAi, 'interpret').mockReturnValue(of({
+      status: 'READY', message: 'Modelo actualizado', operations: [
+        { type: 'CLASS_CREATE', elementType: 'class', parameters: { id: 'venta-larga', name: 'Venta', attributes: [] } }
+      ]
+    }));
+    const start = vi.spyOn(component.voice, 'start').mockImplementation(() => {
+      component.voice.isListening.set(true);
+      return true;
+    });
+    vi.spyOn(component.voice, 'stop').mockImplementation(() => {
+      component.voice.isListening.set(false);
+      component.voice.finalResult.set({ id: 301, text: instruction });
+      return true;
+    });
+
+    component.toggleAiVoice();
+    expect(start).toHaveBeenCalledWith(false);
+    expect(interpret).not.toHaveBeenCalled();
+    component.toggleAiVoice();
+    fixture.detectChanges();
+    await new Promise(resolve => window.setTimeout(resolve, 10));
+
+    const calls = interpret.mock.calls;
+    vi.restoreAllMocks();
+    expect(calls).toEqual([[instruction, expect.any(Object)]]);
+  });
+
+  it('crea desde voz una asociación entre clases arbitrarias y la muestra en el lienzo', async () => {
+    const instruction = 'Asocia Biblioteca con Libro de uno a muchos';
+    const interpret = vi.spyOn((component as any).umlAi, 'interpret').mockReturnValue(of({
+      status: 'READY', interpreter: 'DETERMINISTIC_FALLBACK', fallbackUsed: true,
+      message: 'Asociación creada.', operations: [
+        { type: 'CLASS_CREATE', elementType: 'class', parameters: { id: 'biblioteca-voz', name: 'Biblioteca', attributes: [] } },
+        { type: 'CLASS_CREATE', elementType: 'class', parameters: { id: 'libro-voz', name: 'Libro', attributes: [] } },
+        { type: 'RELATION_CREATE', elementType: 'relation', parameters: { sourceId: 'biblioteca-voz', targetId: 'libro-voz', type: 'association', label: 'contiene', sourceMultiplicity: '1', targetMultiplicity: '1..*' } }
+      ]
+    }));
+    (component as any).voiceCaptureActive = true;
+    component.voice.finalResult.set({ id: 102, text: instruction });
+    fixture.detectChanges();
+    await new Promise(resolve => window.setTimeout(resolve, 10));
+    fixture.detectChanges();
+
+    expect(interpret).toHaveBeenCalledWith(instruction, expect.any(Object));
+    expect(component.classes().map(item => item.name)).toEqual(expect.arrayContaining(['Biblioteca', 'Libro']));
+    expect(component.relations().find(item => item.sourceId === 'biblioteca-voz' && item.targetId === 'libro-voz'))
+      .toEqual(expect.objectContaining({ type: 'association', sourceMultiplicity: '1', targetMultiplicity: '1..*' }));
+    const relation = [...fixture.nativeElement.querySelectorAll('svg.relations g.relation')].at(-1) as SVGGElement;
+    expect([...relation.querySelectorAll('text.multiplicity')].map(item => item.textContent?.trim())).toEqual(['1', '1..*']);
+  });
+
+  it('ejecuta desde una sola transcripción clases, atributos, método y relación muchos a muchos', async () => {
+    const instruction='Crea una clase Venta con atributos id Integer y fecha Date, crea una clase Producto con atributo nombre String, agrega el método calcularTotal que devuelve Double a Venta y relaciona Venta con Producto de 1..* a 1..*';
+    const interpret=vi.spyOn((component as any).umlAi,'interpret').mockReturnValue(of({status:'READY',message:'Modelo creado',operations:[
+      {type:'CLASS_CREATE',elementType:'class',parameters:{id:'venta-voz',name:'Venta',attributes:[{name:'id',type:'Integer'},{name:'fecha',type:'Date'}]}},
+      {type:'CLASS_CREATE',elementType:'class',parameters:{id:'producto-voz',name:'Producto',attributes:[{name:'nombre',type:'String'}]}},
+      {type:'METHOD_CREATE',elementType:'method',parameters:{classId:'venta-voz',name:'calcularTotal',returnType:'Double',parameters:''}},
+      {type:'RELATION_CREATE',elementType:'relation',parameters:{sourceId:'venta-voz',targetId:'producto-voz',type:'association',sourceMultiplicity:'1..*',targetMultiplicity:'1..*'}}
+    ]}));
+    (component as any).voiceCaptureActive=true;
+    component.voice.finalResult.set({id:103,text:instruction});
+    fixture.detectChanges();
+    await new Promise(resolve=>window.setTimeout(resolve,10));
+    fixture.detectChanges();
+    expect(interpret).toHaveBeenCalledWith(instruction,expect.any(Object));
+    expect(component.classes().find(item=>item.id==='venta-voz')?.attributes.map(item=>item.name)).toEqual(['id','fecha']);
+    expect(component.classes().find(item=>item.id==='venta-voz')?.methods.map(item=>item.name)).toEqual(['calcularTotal']);
+    expect(component.classes().find(item=>item.id==='producto-voz')?.attributes.map(item=>item.name)).toEqual(['nombre']);
+    const relation=component.relations().find(item=>item.sourceId==='venta-voz'&&item.targetId==='producto-voz');
+    expect(relation).toEqual(expect.objectContaining({sourceMultiplicity:'1..*',targetMultiplicity:'1..*'}));
+    expect(component.classes().find(item=>item.id===relation?.associationClassId)?.stereotype).toBe('Clase de asociación');
+  });
+
+  it('edita y elimina por voz clases, atributos y métodos, actualizando el lienzo', async () => {
+    const interpret = vi.spyOn((component as any).umlAi, 'interpret');
+    let resultId = 200;
+    const speak = async (instruction: string, operation: string, parameters: Record<string, unknown>, targetId?: string) => {
+      interpret.mockReturnValueOnce(of({ status: 'READY', message: 'Cambio aplicado', operations: [
+        { type: operation, elementType: 'class', targetId, parameters }
+      ] }));
+      (component as any).voiceCaptureActive = true;
+      component.voice.finalResult.set({ id: ++resultId, text: instruction });
+      fixture.detectChanges();
+      await new Promise(resolve => window.setTimeout(resolve, 10));
+      fixture.detectChanges();
+    };
+
+    await speak('Crea una clase Cliente', 'CLASS_CREATE', { id: 'cliente-voz', name: 'Cliente', attributes: [] });
+    await speak('Crea una clase Pedido', 'CLASS_CREATE', { id: 'pedido-voz', name: 'Pedido', attributes: [] });
+    await speak('Relaciona Cliente con Pedido de 1..* a 1..*', 'RELATION_CREATE', {
+      id: 'rel-voz', sourceId: 'cliente-voz', targetId: 'pedido-voz', type: 'association', label: 'realiza',
+      sourceMultiplicity: '1..*', targetMultiplicity: '1..*'
+    });
+    expect(component.classes().map(item => item.id)).toEqual(expect.arrayContaining(['cliente-voz', 'pedido-voz']));
+    const associationId = component.relations().find(item => item.id === 'rel-voz')?.associationClassId;
+    expect(associationId).toBeTruthy();
+    await speak('Agrega codigo String a Cliente', 'ATTRIBUTE_CREATE', { classId: 'cliente-voz', id: 'attr-voz', name: 'codigo', type: 'String' });
+    await speak('Renombra el atributo codigo de Cliente a identificador', 'ATTRIBUTE_UPDATE', { classId: 'cliente-voz', name: 'identificador' }, 'attr-voz');
+    await speak('Agrega el método calcular a Cliente', 'METHOD_CREATE', { classId: 'cliente-voz', id: 'method-voz', name: 'calcular', returnType: 'void' });
+    await speak('Renombra el método calcular a validar', 'METHOD_UPDATE', { classId: 'cliente-voz', name: 'validar' }, 'method-voz');
+    await speak('Renombra Cliente a Socio', 'CLASS_UPDATE', { name: 'Socio' }, 'cliente-voz');
+    const card = [...fixture.nativeElement.querySelectorAll('.class-card')].find((item: Element) => item.textContent?.includes('Socio')) as Element;
+    expect(card?.textContent).toContain('identificador');
+    expect(card?.textContent).toContain('validar');
+    expect([...fixture.nativeElement.querySelectorAll('svg.relations text.relation-label')]
+      .some((item: Element) => item.textContent?.includes('realiza'))).toBe(true);
+
+    await speak('Elimina el atributo identificador de Socio', 'ATTRIBUTE_DELETE', { classId: 'cliente-voz' }, 'attr-voz');
+    await speak('Elimina el método validar de Socio', 'METHOD_DELETE', { classId: 'cliente-voz' }, 'method-voz');
+    expect(component.classes().find(item => item.id === 'cliente-voz')?.attributes).toHaveLength(0);
+    expect(component.classes().find(item => item.id === 'cliente-voz')?.methods).toHaveLength(0);
+    await speak('Elimina la clase Socio', 'CLASS_DELETE', {}, 'cliente-voz');
+    expect(component.classes().some(item => item.id === 'cliente-voz' || item.id === associationId)).toBe(false);
+    expect(component.relations().some(item => item.id === 'rel-voz')).toBe(false);
+    expect([...fixture.nativeElement.querySelectorAll('.class-card')]
+      .some((item: Element) => item.textContent?.includes('Socio'))).toBe(false);
+  });
+
+  it('aplica instrucciones de texto y refresca de inmediato clases, miembros y relación en el DOM', () => {
+    fixture.detectChanges();
+    component.model.set({ ...component.model(), classes: [], relations: [] });
+    const interpret = vi.spyOn((component as any).umlAi, 'interpret');
+    const send = (instruction: string, operations: Record<string, unknown>[]) => {
+      interpret.mockReturnValueOnce(of({ status: 'READY', message: 'Cambio aplicado', operations }));
+      component.aiInstruction.set(instruction);
+      component.sendAiInstruction();
+      fixture.detectChanges();
+      expect(interpret).toHaveBeenLastCalledWith(instruction, expect.any(Object));
+    };
+    send('Crea Venta y Producto con atributos y método; relación de 0..* a 1..* con verbo incluye', [
+      { type: 'CLASS_CREATE', parameters: { id: 'venta-texto', name: 'Venta', attributes: [{ id: 'attr-texto', name: 'codigo', type: 'String' }] } },
+      { type: 'CLASS_CREATE', parameters: { id: 'producto-texto', name: 'Producto', attributes: [] } },
+      { type: 'METHOD_CREATE', parameters: { classId: 'venta-texto', id: 'metodo-texto', name: 'calcular', returnType: 'Double' } },
+      { type: 'RELATION_CREATE', parameters: { id: 'rel-texto', sourceId: 'venta-texto', targetId: 'producto-texto', type: 'association', label: 'incluye', sourceMultiplicity: '0..*', targetMultiplicity: '1..*', associationClassName: 'DetalleVenta' } }
+    ]);
+    const associationId = component.relations().find(item => item.id === 'rel-texto')?.associationClassId;
+    expect(component.classes().find(item => item.id === associationId)?.name).toBe('DetalleVenta');
+    expect(fixture.nativeElement.querySelectorAll('.class-card')).toHaveLength(3);
+    expect(fixture.nativeElement.querySelector('svg.relations text.relation-label')?.textContent).toContain('incluye');
+
+    send('Renombra Venta, cambia codigo e incorpora un atributo', [
+      { type: 'CLASS_UPDATE', targetId: 'venta-texto', parameters: { name: 'Factura' } },
+      { type: 'ATTRIBUTE_UPDATE', targetId: 'attr-texto', parameters: { classId: 'venta-texto', name: 'numero' } },
+      { type: 'ATTRIBUTE_CREATE', parameters: { classId: 'venta-texto', id: 'fecha-texto', name: 'fecha', type: 'Date' } },
+      { type: 'METHOD_UPDATE', targetId: 'metodo-texto', parameters: { classId: 'venta-texto', name: 'total' } }
+    ]);
+    const card = [...fixture.nativeElement.querySelectorAll('.class-card')].find((item: Element) => item.textContent?.includes('Factura')) as Element;
+    expect(card?.textContent).toContain('numero');
+    expect(card?.textContent).toContain('fecha');
+    expect(card?.textContent).toContain('total');
+
+    send('Elimina el atributo numero, el método total y la clase Factura', [
+      { type: 'ATTRIBUTE_DELETE', targetId: 'attr-texto', parameters: { classId: 'venta-texto' } },
+      { type: 'METHOD_DELETE', targetId: 'metodo-texto', parameters: { classId: 'venta-texto' } },
+      { type: 'CLASS_DELETE', targetId: 'venta-texto', parameters: {} }
+    ]);
+    expect(component.classes().map(item => item.id)).toEqual(['producto-texto']);
+    expect(component.relations()).toHaveLength(0);
+    expect(fixture.nativeElement.querySelectorAll('.class-card')).toHaveLength(1);
   });
 });

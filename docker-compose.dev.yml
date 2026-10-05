@@ -27,8 +27,10 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: dev
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6.1-sol}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-6.1-sol}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-low}
       PORT: 8080
       DB_HOST: postgres
       DB_PORT: 5432

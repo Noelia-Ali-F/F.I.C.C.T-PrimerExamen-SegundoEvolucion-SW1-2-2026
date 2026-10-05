@@ -92,7 +92,7 @@
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
-        <!-- Spring AI Vertex AI Gemini Starter (Oficial para GCP Enterprise) -->
+        <!-- OpenAPI documentation -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

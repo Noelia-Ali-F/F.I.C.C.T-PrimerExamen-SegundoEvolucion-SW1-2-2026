@@ -20,12 +20,19 @@ export class UmlProjectStoreService {
   list(): Observable<UmlProject[]> {
     return this.http.get<ApiResponse<ProjectDto[]>>(this.endpoint).pipe(
       map(response => response.datos.map(project => this.fromDto(project))),
+      tap(projects => this.markRemoteProjects(projects)),
       switchMap(remote => this.migratePending(remote).pipe(
         switchMap(results => results.length
-          ? this.http.get<ApiResponse<ProjectDto[]>>(this.endpoint).pipe(map(response => response.datos.map(project => this.fromDto(project))))
+          ? this.http.get<ApiResponse<ProjectDto[]>>(this.endpoint).pipe(
+              map(response => response.datos.map(project => this.fromDto(project))),
+              tap(projects => this.markRemoteProjects(projects)))
           : of(remote))
       )),
-      map(projects => { const ids=new Set(projects.map(project=>project.id));return [...projects,...this.read().filter(project=>!ids.has(project.id)&&!this.migrationMarks()[project.id])]; }),
+      map(projects => {
+        const ids=new Set(projects.map(project=>project.id));
+        const pendingLocal=this.read().filter(project=>!ids.has(project.id)&&this.isPendingLocal(project));
+        return [...projects,...pendingLocal];
+      }),
       tap(projects => this.mergeCache(projects))
     );
   }
@@ -111,7 +118,7 @@ export class UmlProjectStoreService {
   private migratePending(remote: UmlProject[]): Observable<boolean[]> {
     const remoteIds = new Set(remote.map(project => project.id));
     const migrated = this.migrationMarks();
-    const pending = this.read().filter(project => !migrated[project.id] && !remoteIds.has(project.id));
+    const pending = this.read().filter(project => !migrated[project.id] && !remoteIds.has(project.id) && this.isPendingLocal(project));
     if (!pending.length) return of([]);
     return from(pending).pipe(
       concatMap(project => this.http.post<ApiResponse<ProjectDto>>(this.endpoint, {
@@ -142,7 +149,9 @@ export class UmlProjectStoreService {
     value.title = dto.name;
     return { ...dto, model:value, modelVersion };
   }
-  private mergeCache(projects:UmlProject[]) { const local=this.read();const remoteIds=new Set(projects.map(project=>project.id));const merged=projects.map(project=>{const cached=local.find(item=>item.id===project.id);return cached?{...project,model:cached.model,modelVersion:cached.modelVersion}:project;});this.write([...local.filter(project=>!remoteIds.has(project.id)),...merged]); }
+  private mergeCache(projects:UmlProject[]) { const local=this.read();const merged=projects.map(project=>{const cached=local.find(item=>item.id===project.id);return cached?{...project,model:cached.model,modelVersion:cached.modelVersion}:project;});this.write(merged); }
+  private markRemoteProjects(projects:UmlProject[]) { const marks=this.migrationMarks();let changed=false;for(const project of projects){if(!marks[project.id]){marks[project.id]=new Date().toISOString();changed=true;}}if(changed)this.writeMigrationMarks(marks); }
+  private isPendingLocal(project:UmlProject) { return !this.migrationMarks()[project.id] && !project.owner && !project.memberRole; }
   private putCache(project:UmlProject) { this.write([...this.read().filter(item=>item.id!==project.id), this.clone(project)]); }
   private read():UmlProject[]{try{const parsed=JSON.parse(localStorage.getItem(UmlProjectStoreService.STORAGE_KEY)??'[]');return Array.isArray(parsed)?parsed:[];}catch{return[];}}
   private write(projects:UmlProject[]){localStorage.setItem(UmlProjectStoreService.STORAGE_KEY,JSON.stringify(projects));}

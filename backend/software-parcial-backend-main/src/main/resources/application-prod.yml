@@ -9,17 +9,6 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
-  ai:
-    vertex:
-      ai:
-        gemini:
-          project-id: ${GCP_PROJECT_ID:${VERTEX_AI_PROJECT_ID:}}
-          location: us-central1
-          chat:
-              options:
-                model: gemini-2.5-flash
-                temperature: 0.1
-
 server:
   port: ${PORT:8080}
 
@@ -33,9 +22,10 @@ app:
     dir: /app/uploads/avatars
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
-  gemini:
-    api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-3.8-flash}
-    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
-    timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:25}
-    retry-base-ms: ${GEMINI_RETRY_BASE_MS:1000}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-6.1-sol}
+    image-model: ${OPENAI_IMAGE_MODEL:gpt-6.1-sol}
+    reasoning-effort: ${OPENAI_REASONING_EFFORT:low}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:45}

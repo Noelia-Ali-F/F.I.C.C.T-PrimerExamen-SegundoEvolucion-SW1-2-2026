@@ -8,7 +8,7 @@ ArqNova es una plataforma UML colaborativa con inteligencia artificial y generac
 - gestión y persistencia de proyectos UML;
 - edición colaborativa en tiempo real mediante WebSocket/STOMP;
 - bloqueo temporal de clases, atributos y relaciones;
-- edición UML mediante texto o voz con Google Gemini y respaldo determinista;
+- edición UML mediante texto o voz con OpenAI y respaldo determinista;
 - reconstrucción de diagramas desde imágenes;
 - importación y exportación XMI compatible con Enterprise Architect;
 - generación de proyectos Spring Boot con PostgreSQL;
@@ -76,7 +76,7 @@ La dirección del backend móvil se configura mediante `API_BASE_URL`; no se fij
 
 ## Configuración sensible
 
-Las claves y secretos se proporcionan mediante variables de entorno. No deben escribirse en documentación ni almacenarse en archivos versionados. Entre las variables utilizadas están `AUTH_TOKEN_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
+Las claves y secretos se proporcionan mediante variables de entorno. No deben escribirse en documentación ni almacenarse en archivos versionados. Entre las variables utilizadas están `AUTH_TOKEN_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
 
 ## Despliegues externos
 
