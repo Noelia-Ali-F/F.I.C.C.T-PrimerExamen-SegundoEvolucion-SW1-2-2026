@@ -1,10 +1,38 @@
 # ArqNova
 
-> Integración de IA actual: Gemini como proveedor principal y GroqCloud como respaldo. Consulta [AI_PROVIDERS.md](backend/software-parcial-backend-main/AI_PROVIDERS.md). Las tres claves de Gemini comparten la cuota del mismo proyecto.
+**ArqNova** es una plataforma de modelado UML colaborativo con edición en tiempo real, inteligencia artificial, interoperabilidad con Enterprise Architect y generación de software. Incluye editor web, backend, PostgreSQL y aplicación Android.
 
-**ArqNova** es una plataforma de modelado UML colaborativo que integra edición en tiempo real, inteligencia artificial, interoperabilidad XMI y generación automática de software. El repositorio reúne la aplicación web, el backend, PostgreSQL y la aplicación móvil Android desarrollados para el examen de Software I.
+El proyecto continúa en el **segundo examen de Software I**. **Todo lo implementado hasta ahora corresponde al primer examen; todavía no hay funcionalidades implementadas del segundo examen.**
 
-## Funcionalidades implementadas
+## Contenido
+
+- [Estado de las entregas](#estado-de-las-entregas)
+- [Primer examen: funcionalidades implementadas](#primer-examen-funcionalidades-implementadas)
+- [Segundo examen: pendiente de implementación](#segundo-examen-pendiente-de-implementación)
+- [Arquitectura general](#arquitectura-general)
+- [Stack tecnológico](#stack-tecnológico)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Documentación](#documentación)
+- [Ejecución con Docker](#ejecución-con-docker)
+- [Ejecución y pruebas por módulo](#ejecución-y-pruebas-por-módulo)
+- [Variables de entorno principales](#variables-de-entorno-principales)
+- [Despliegue en AWS EC2](#despliegue-en-aws-ec2)
+- [Alcance y consideraciones](#alcance-y-consideraciones)
+- [Identidad técnica](#identidad-técnica)
+
+## Estado de las entregas
+
+| Etapa | Estado | Contenido |
+|---|---|---|
+| Primer examen | Implementado | Funcionalidades existentes, documentación y ajustes del sistema actual |
+| Segundo examen | Sin funcionalidades implementadas | Espacio reservado para documentar los nuevos requisitos, su implementación y sus pruebas |
+
+## Primer examen: funcionalidades implementadas
+
+Esta sección reúne el alcance existente del primer examen. Los ajustes de IA, reconocimiento de imágenes y compatibilidad XMI realizados hasta ahora forman parte de esta base; no se presentan como avances del segundo examen.
+
+<details>
+<summary><strong>Acceso, usuarios y proyectos</strong></summary>
 
 ### Acceso y administración de usuarios
 
@@ -24,6 +52,11 @@
 - Validación de datos y prevención de nombres duplicados.
 - Confirmación antes de eliminar y acceso directo al editor.
 - Persistencia en PostgreSQL y recuperación del diagrama guardado.
+
+</details>
+
+<details>
+<summary><strong>Editor UML y colaboración</strong></summary>
 
 ### Editor de diagramas de clases
 
@@ -62,19 +95,27 @@
 - Panel actualizado en tiempo real.
 - Persistencia de actividades colaborativas en PostgreSQL.
 
+</details>
+
+<details>
+<summary><strong>Asistente IA, imágenes y Enterprise Architect</strong></summary>
+
 ### Modelado mediante inteligencia artificial
 
 - Interpretación de instrucciones UML en lenguaje natural.
 - Entrada por texto o reconocimiento de voz desde el editor web.
 - Creación y modificación asistida de clases, atributos y relaciones.
-- Integración con Google OpenAI mediante configuración externa.
+- Gemini como proveedor principal y GroqCloud como respaldo automático mediante configuración externa.
+- Tres credenciales de Gemini del mismo proyecto, con cuota compartida y cambio a GroqCloud ante límites o fallos.
+- [Configuración y comportamiento del pipeline de IA](backend/software-parcial-backend-main/AI_PROVIDERS.md).
 - Validación de respuestas antes de incorporarlas al modelo editable.
 - Manejo controlado de errores y respaldo determinista para comandos soportados.
 
 ### Reconstrucción desde imagen
 
 - Carga y análisis de imágenes de diagramas.
-- Reconocimiento de clases, atributos, tipos y relaciones mediante IA.
+- Reconocimiento de clases, atributos, métodos, relaciones, multiplicidades y posiciones relativas mediante IA.
+- Conservación de composiciones y advertencias cuando falta una multiplicidad; el resultado requiere revisión.
 - Conversión al modelo interno y generación de elementos UML reales y editables.
 - Validación y mensajes de error para resultados incompletos.
 
@@ -85,7 +126,14 @@
 - Interpretación de clases, atributos, tipos, identificadores, relaciones y multiplicidades.
 - Conversión a elementos editables dentro del lienzo actual.
 - Exportación del modelo vigente como archivo XMI descargable.
+- Clases de asociación de muchos a muchos y enlaces nativos para Enterprise Architect.
+- Uso de los colores predeterminados de Enterprise Architect al importar el XMI exportado.
 - Identificadores estables y advertencias para elementos no soportados.
+
+</details>
+
+<details>
+<summary><strong>Generación de software</strong></summary>
 
 ### Generación de backend Spring Boot
 
@@ -117,6 +165,11 @@
 - Estructura organizada y exportación en ZIP.
 - Separación respecto de la aplicación móvil ArqNova existente.
 
+</details>
+
+<details>
+<summary><strong>Aplicación Android y funcionamiento offline</strong></summary>
+
 ### Aplicación móvil Android
 
 - Aplicación **ArqNova Mobile** desarrollada con Flutter.
@@ -142,6 +195,21 @@
 - UUID local e `Idempotency-Key` para evitar duplicados.
 - Conservación de pendientes cuando el servidor no está disponible.
 
+</details>
+
+## Segundo examen: pendiente de implementación
+
+**Estado actual: todavía no se implementó ninguna funcionalidad del segundo examen.**
+
+Esta sección se completará a medida que avancemos. Para cada nueva funcionalidad se documentarán:
+
+- El requisito y su objetivo.
+- El estado: pendiente, en desarrollo o implementado.
+- Los módulos afectados y la forma de utilizarla.
+- Las pruebas y evidencias de funcionamiento.
+
+Las funcionalidades se marcarán como implementadas cuando estén terminadas y verificadas. La documentación del primer examen se conservará como referencia.
+
 ## Arquitectura general
 
 ```text
@@ -162,6 +230,8 @@
 ```
 
 ## Stack tecnológico
+
+Tecnologías compartidas por el proyecto; este apartado se actualizará si el segundo examen introduce cambios.
 
 ### Frontend web
 
@@ -190,7 +260,7 @@
 - Persistencia relacional de usuarios, proyectos, sesiones y actividades.
 - Modelo UML serializado en JSON/JSONB.
 - Migraciones versionadas con Flyway.
-- Google OpenAI para instrucciones UML y análisis de imágenes.
+- Gemini y GroqCloud para instrucciones UML y análisis de imágenes, con respaldo automático.
 - Reconocimiento de voz web y móvil.
 
 ### Aplicación móvil
@@ -223,11 +293,14 @@ docker-compose.dev.yml                   Entorno de desarrollo
 .env.aws.example                         Variables AWS de ejemplo
 ```
 
-## Documentación del examen
+## Documentación
 
-- [Matriz de cumplimiento](docs/MATRIZ_CUMPLIMIENTO_EXAMEN.md).
+- [Matriz de cumplimiento del primer examen](docs/MATRIZ_CUMPLIMIENTO_EXAMEN.md).
 - [Estándares de programación](docs/ESTANDARES_DE_PROGRAMACION.md).
-- [Videotutoriales y guiones de demostración](docs/tutoriales/README.md).
+- [Videotutoriales y guiones de demostración del primer examen](docs/tutoriales/README.md).
+- [Pipeline de Gemini y GroqCloud](backend/software-parcial-backend-main/AI_PROVIDERS.md).
+
+Los documentos del primer examen respaldan el alcance existente. La documentación del segundo se incorporará aquí conforme se implemente.
 
 ## Ejecución con Docker
 
@@ -251,7 +324,8 @@ docker compose ps
 
 ## Ejecución y pruebas por módulo
 
-### Backend
+<details>
+<summary><strong>Backend</strong></summary>
 
 ```bash
 cd backend/software-parcial-backend-main
@@ -265,7 +339,10 @@ Para generar `target/arqnova-backend-1.0.0-SNAPSHOT.jar`:
 ./mvnw -DskipTests package
 ```
 
-### Frontend web
+</details>
+
+<details>
+<summary><strong>Frontend web</strong></summary>
 
 ```bash
 cd frontend/arqnova-frontend
@@ -277,7 +354,10 @@ npm start
 
 Durante desarrollo se publica normalmente en `http://localhost:4200`.
 
-### Aplicación móvil Android con FVM
+</details>
+
+<details>
+<summary><strong>Aplicación móvil Android con FVM</strong></summary>
 
 ```bash
 cd mobile/arqnova-mobile
@@ -300,6 +380,8 @@ fvm flutter devices
 fvm flutter run
 ```
 
+</details>
+
 ## Variables de entorno principales
 
 | Variable | Uso |
@@ -308,8 +390,12 @@ fvm flutter run
 | `DB_USER` | Usuario PostgreSQL |
 | `DB_PASSWORD` | Contraseña PostgreSQL |
 | `AUTH_TOKEN_SECRET` | Firma de tokens |
-| `OPENAI_API_KEY` | Acceso a Google OpenAI |
-| `OPENAI_MODEL` | Modelo OpenAI seleccionado |
+| `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3` | Credenciales del mismo proyecto de Gemini; comparten cuota |
+| `GEMINI_MODEL` | Modelo principal: `gemini-3.8-flash` |
+| `GROQ_API_KEY` | Credencial del proveedor de respaldo |
+| `GROQ_MODEL` | Modelo de texto: `openai/gpt-oss-120b` |
+| `GROQ_IMAGE_MODEL` | Modelo visual: `qwen/qwen3.8-27b` |
+| `AI_PROVIDER_TIMEOUT_SECONDS` | Tiempo máximo por solicitud a un proveedor |
 | `CORS_ALLOWED_ORIGINS` | Orígenes web permitidos |
 | `FRONTEND_API_URL` | URL de API para el frontend |
 | `API_BASE_URL` | URL consumida por ArqNova Mobile |
@@ -345,7 +431,3 @@ Debe publicarse el puerto del frontend en el Security Group. PostgreSQL debe per
 - Frontend: `arqnova-frontend`.
 - Aplicación móvil: `arqnova_mobile`.
 - Package Android: `com.arqnova.mobile`.
-
-## Actualización del editor y la IA
-
-La integración actual usa OpenAI. Consulta [OPENAI.md](backend/software-parcial-backend-main/OPENAI.md) para configurar los modelos y la clave en variables de entorno. La generación desde imágenes conserva composiciones, métodos y posiciones relativas; las multiplicidades ausentes se señalan para revisión. El exportador XMI conserva las clases de asociación de muchos a muchos y utiliza los colores predeterminados de Enterprise Architect.
