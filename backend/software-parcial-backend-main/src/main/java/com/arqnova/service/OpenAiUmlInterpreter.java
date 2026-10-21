@@ -44,6 +44,8 @@ public class OpenAiUmlInterpreter {
     private static final String MULTIPLICITY = "^(\\*|\\d+|\\d+\\.\\.(\\d+|\\*))$";
 
     private final ObjectMapper mapper;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private UmlAiProviderPipeline providerPipeline;
+    private final ThreadLocal<UmlAiProviderPipeline.Result> providerResult = new ThreadLocal<>();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
     @Value("${app.openai.api-key:}") private String apiKey;
@@ -55,7 +57,7 @@ public class OpenAiUmlInterpreter {
 
     public OpenAiUmlInterpreter(ObjectMapper mapper) { this.mapper = mapper; }
 
-    public boolean isConfigured() { return apiKey != null && !apiKey.isBlank(); }
+    public boolean isConfigured() { return (providerPipeline != null && providerPipeline.isConfigured()) || (apiKey != null && !apiKey.isBlank()); }
 
     private String visionModel() {
         return imageModel == null || imageModel.isBlank() ? model : imageModel.trim();
@@ -99,13 +101,13 @@ public class OpenAiUmlInterpreter {
         String json;
         try {
             json = sendOpenAi(prompt, imageSchema(), "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(image.getBytes()), visionModel(), trace);
-            log.info("OpenAI CU8 HTTP completado: durationMs={} attempts={} status={}",
+            log.info("UML IA HTTP completado: durationMs={} attempts={} status={}",
                     Duration.ofNanos(System.nanoTime() - startedAt).toMillis(), trace.attempts, 200);
         } catch (Exception error) {
             String errorType = error instanceof HttpTimeoutException ? "TIMEOUT"
                     : error instanceof ProviderException provider ? "HTTP_" + provider.httpStatus
                     : error.getClass().getSimpleName();
-            log.warn("OpenAI CU8 HTTP falló: durationMs={} attempts={} errorType={}",
+            log.warn("UML IA HTTP falló: durationMs={} attempts={} errorType={}",
                     Duration.ofNanos(System.nanoTime() - startedAt).toMillis(), trace.attempts, errorType);
             throw error;
         }
@@ -115,7 +117,11 @@ public class OpenAiUmlInterpreter {
                 || !(raw.get("classes") instanceof List<?>) || !(raw.get("relations") instanceof List<?>)
                 || !(raw.get("warnings") instanceof List<?>) || !(raw.get("message") instanceof String))
             throw new IllegalArgumentException("Respuesta visual incompatible con el schema.");
-        return validateImage(raw);
+        Map<String,Object> result=new LinkedHashMap<>(validateImage(raw));
+        var used=providerResult.get();
+        if(used!=null){result.put("provider",used.provider());result.put("model",used.model());result.put("fallbackUsed",used.fallbackUsed());}
+        providerResult.remove();
+        return result;
     }
 
     public UmlAiCommandResponse interpret(UmlAiCommandRequest request) throws Exception {
@@ -146,6 +152,9 @@ public class OpenAiUmlInterpreter {
         try {
             Map<String, Object> raw = mapper.readValue(json, new TypeReference<>() {});
             UmlAiCommandResponse result = validate(raw, request.getModel());
+            var used=providerResult.get();
+            if(used!=null){result.setInterpreter(used.provider());result.setFallbackUsed(used.fallbackUsed());}
+            providerResult.remove();
             if ("ERROR".equals(result.getStatus())) {
                 log.warn("OpenAI UML produjo una salida rechazada por validación (modelo={}): {}",
                         model, result.getMessage());
@@ -161,6 +170,13 @@ public class OpenAiUmlInterpreter {
     private static final class OpenAiRequestTrace { int attempts; }
 
     private String sendOpenAi(String prompt, Map<String,Object> schema, String imageUrl, String selectedModel, OpenAiRequestTrace trace) throws Exception {
+        providerResult.remove();
+        if(providerPipeline!=null && providerPipeline.isConfigured()){
+            if(trace!=null)trace.attempts++;
+            var result=providerPipeline.generate(prompt,strictSchema(mapper.valueToTree(schema),imageUrl==null),imageUrl);
+            providerResult.set(result);
+            return result.json();
+        }
         if (!isConfigured()) throw new IllegalStateException("OpenAI no está configurado.");
         List<Map<String,Object>> content = new ArrayList<>();
         content.add(Map.of("type", "input_text", "text", prompt + "\nUsa null para parámetros no aplicables; no los inventes."));

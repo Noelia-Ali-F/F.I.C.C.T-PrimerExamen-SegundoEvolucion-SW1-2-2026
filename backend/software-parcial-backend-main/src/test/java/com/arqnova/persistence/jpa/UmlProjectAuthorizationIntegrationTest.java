@@ -23,11 +23,16 @@ class UmlProjectAuthorizationIntegrationTest {
     private static final String PROJECT = "phase3-authorization";
 
     @Autowired UmlProjectPersistenceService service;
+    @Autowired com.arqnova.persistence.jpa.repository.UserJpaRepository users;
+    private static final String ADMIN = "phase3-authorization-admin";
 
-    @AfterEach void cleanup() { service.deleteProject(PROJECT); }
+    @AfterEach void cleanup() { service.deleteProject(PROJECT); users.deleteById(ADMIN); }
 
     @Test
     void enforcesMembershipRolesAndModelVersion() {
+        users.saveAndFlush(com.arqnova.persistence.jpa.entity.UserEntity.builder().id(ADMIN).username(ADMIN)
+                .passwordHash("integration-test-placeholder").fullName("Test administrator")
+                .role(com.arqnova.domain.enums.RolUsuario.ADMINISTRADOR).enabled(true).build());
         service.createProject(PROJECT, "Veterinaria", "Proyecto", "owner-a");
         service.addMember(PROJECT, "editor-b", ProjectMemberRole.EDITOR);
         service.addMember(PROJECT, "viewer-c", ProjectMemberRole.VIEWER);
@@ -53,9 +58,9 @@ class UmlProjectAuthorizationIntegrationTest {
         assertTrue(service.listAccessible("editor-b").stream().anyMatch(project -> PROJECT.equals(project.getId())));
         assertTrue(service.listAccessible("viewer-c").stream().anyMatch(project -> PROJECT.equals(project.getId())));
         assertFalse(service.listAccessible("intruder-d").stream().anyMatch(project -> PROJECT.equals(project.getId())));
-        assertTrue(service.listAccessible("admin").stream().anyMatch(project -> PROJECT.equals(project.getId())));
+        assertTrue(service.listAccessible(ADMIN).stream().anyMatch(project -> PROJECT.equals(project.getId())));
         assertThrows(UnauthorizedActionException.class, () -> service.deleteProjectAuthorized(PROJECT, "editor-b"));
-        service.deleteProjectAuthorized(PROJECT, "admin");
+        service.deleteProjectAuthorized(PROJECT, ADMIN);
         assertFalse(service.findProjectById(PROJECT).isPresent());
         assertFalse(service.findDiagramByProjectId(PROJECT).isPresent());
     }

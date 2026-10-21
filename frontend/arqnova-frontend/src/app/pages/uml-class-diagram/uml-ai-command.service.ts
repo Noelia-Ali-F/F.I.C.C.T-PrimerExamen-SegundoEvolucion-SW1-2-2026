@@ -18,7 +18,7 @@ export interface UmlAiCommand {
   message: string;
   operations?: UmlAiOperationItem[];
   clarificationQuestion?: string;
-  interpreter?: 'OPENAI' | 'DETERMINISTIC_FALLBACK';
+  interpreter?: 'OPENAI' | 'GEMINI' | 'GROQ' | 'DETERMINISTIC_FALLBACK';
   fallbackUsed?: boolean;
 }
 
@@ -33,7 +33,7 @@ export interface UmlAiOperationItem {
 export interface UmlImageAttribute { id?: string; name: string; type: string; isPrimaryKey: boolean; }
 export interface UmlImageClass { name: string; attributes: UmlImageAttribute[]; methods?: { name: string; parameters: string; returnType: string; }[]; x?: number; y?: number; }
 export interface UmlImageRelation { sourceClassName: string; targetClassName: string; type: string; label: string; sourceMultiplicity: string; targetMultiplicity: string; associationClassName?: string; }
-export interface UmlImageAnalysis { status: 'READY'|'ERROR'; classes: UmlImageClass[]; relations: UmlImageRelation[]; warnings: string[]; message: string; provider: 'OPENAI'; model: string; }
+export interface UmlImageAnalysis { status: 'READY'|'ERROR'; classes: UmlImageClass[]; relations: UmlImageRelation[]; warnings: string[]; message: string; provider: 'OPENAI' | 'GEMINI' | 'GROQ'; model: string; }
 
 @Injectable({ providedIn: 'root' })
 export class UmlAiCommandService {

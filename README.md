@@ -1,5 +1,7 @@
 # ArqNova
 
+> Integración de IA actual: Gemini como proveedor principal y GroqCloud como respaldo. Consulta [AI_PROVIDERS.md](backend/software-parcial-backend-main/AI_PROVIDERS.md). Las tres claves de Gemini comparten la cuota del mismo proyecto.
+
 **ArqNova** es una plataforma de modelado UML colaborativo que integra edición en tiempo real, inteligencia artificial, interoperabilidad XMI y generación automática de software. El repositorio reúne la aplicación web, el backend, PostgreSQL y la aplicación móvil Android desarrollados para el examen de Software I.
 
 ## Funcionalidades implementadas
