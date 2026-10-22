@@ -12,7 +12,9 @@
 ## Java y Spring Boot
 
 - Java 17 como versión del proyecto.
-- Paquetes bajo `com.arqnova`, en minúsculas y organizados por responsabilidad.
+- Paquetes bajo `com.arqnova`, organizados en `modelo`, `servicios`, `controladores` y `repositorios`.
+- Dirección de dependencias: controladores → servicios → repositorios; las tres capas pueden utilizar el modelo. El modelo no depende de ellas.
+- Configuración HTTP/WebSocket y filtros dentro de `controladores`; seguridad de aplicación e inicialización dentro de `servicios`.
 - Clases en `PascalCase`; métodos y variables en `camelCase`; constantes en `UPPER_SNAKE_CASE`.
 - Controladores limitados a transporte, validación y delegación.
 - Lógica de negocio en servicios e interfaces de servicio cuando corresponda.

@@ -10,6 +10,7 @@ El proyecto continúa en el **segundo examen de Software I**. **Todo lo implemen
 - [Primer examen: funcionalidades implementadas](#primer-examen-funcionalidades-implementadas)
 - [Segundo examen: pendiente de implementación](#segundo-examen-pendiente-de-implementación)
 - [Arquitectura general](#arquitectura-general)
+- [Backend en cuatro capas](#backend-en-cuatro-capas)
 - [Stack tecnológico](#stack-tecnológico)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Documentación](#documentación)
@@ -228,6 +229,23 @@ Las funcionalidades se marcarán como implementadas cuando estén terminadas y v
 │ UML JSON + colaboración  │
 └──────────────────────────┘
 ```
+
+## Backend en cuatro capas
+
+El backend Spring Boot está organizado en cuatro capas bajo `com.arqnova`. La reorganización mantiene los contratos de la API, el esquema de PostgreSQL y las funcionalidades existentes.
+
+```text
+com/arqnova/
+├── ArqNovaApplication.java
+├── modelo/          Modelos, entidades JPA, enumeraciones, DTO y excepciones
+├── servicios/       Lógica de negocio, IA, seguridad e inicialización
+├── controladores/   REST, WebSocket, filtros, configuración web y manejo de errores
+└── repositorios/    Acceso a datos, almacenes y repositorios Spring Data JPA
+```
+
+Los controladores delegan en servicios; los servicios utilizan repositorios y modelos. Los modelos no dependen de las otras capas. Las pruebas de arquitectura verifican esta dirección de dependencias.
+
+Consulta la [guía de organización del backend](backend/software-parcial-backend-main/ARQUITECTURA.md). Es una reorganización técnica de la base existente; no representa una nueva funcionalidad del segundo examen.
 
 ## Stack tecnológico
 
