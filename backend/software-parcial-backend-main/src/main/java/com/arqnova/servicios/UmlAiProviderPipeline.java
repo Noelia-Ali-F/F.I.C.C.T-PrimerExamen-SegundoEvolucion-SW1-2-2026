@@ -94,12 +94,20 @@ public class UmlAiProviderPipeline {
         return jsonObject(text.toString());
     }
 
+    public String transcribeImageTitles(String prompt,Map<String,Object> schema,String imageUrl) throws Exception {
+        return groq(prompt,schema,imageUrl,groqImageModel,512);
+    }
+
     private String groq(String prompt,Map<String,Object> schema,String imageUrl,String selectedModel) throws Exception {
+        return groq(prompt,schema,imageUrl,selectedModel,8192);
+    }
+
+    private String groq(String prompt,Map<String,Object> schema,String imageUrl,String selectedModel,int maxTokens) throws Exception {
         List<Map<String,Object>> content=new ArrayList<>();
         content.add(Map.of("type","text","text",prompt+"\nDevuelve exclusivamente un objeto JSON con este JSON Schema: "+mapper.writeValueAsString(schema)));
         if(imageUrl!=null)content.add(Map.of("type","image_url","image_url",Map.of("url",imageUrl)));
         Map<String,Object> payload=new LinkedHashMap<>();
-        payload.put("model",selectedModel);payload.put("temperature",0);payload.put("max_completion_tokens",8192);
+        payload.put("model",selectedModel);payload.put("temperature",0);payload.put("max_completion_tokens",maxTokens);
         payload.put("messages",List.of(Map.of("role","user","content",content)));
         if(imageUrl==null&&selectedModel.startsWith("openai/gpt-oss-")){
             payload.put("reasoning_effort","low");

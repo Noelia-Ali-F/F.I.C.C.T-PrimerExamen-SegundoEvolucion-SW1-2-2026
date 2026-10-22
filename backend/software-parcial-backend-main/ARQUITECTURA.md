@@ -51,3 +51,9 @@ La configuración web, el filtro de autenticación y el manejador HTTP de excepc
 - Las pruebas de arquitectura rechazan código fuera de las cuatro capas y dependencias en sentido incorrecto.
 
 Esta estructura es una arquitectura por capas con Spring Boot. No se presenta como arquitectura hexagonal. Es una reorganización técnica de las funcionalidades existentes, sin atribuir nuevas funcionalidades al segundo examen.
+
+## Lectura de diagramas manuscritos
+
+El análisis clasifica cada relación por el símbolo visible en sus propios extremos. Un codo, un borde de clase o una multiplicidad no se consideran rombos. Los nombres se transcriben literalmente y no se infieren claves primarias a partir de `Id`.
+
+Cuando interviene Groq, el servicio revisa los títulos con una imagen de recortes ampliados de las clases ubicadas por el análisis inicial (hasta 12 clases). Esta revisión es una llamada adicional con un máximo de 512 tokens de salida. Los cambios de nombre actualizan las referencias de las relaciones, incluida la clase de asociación, sin cambiar tipos ni multiplicidades. Las respuestas incompletas o con nombres duplicados no se aplican. Si falla la revisión o un título no se lee, se conserva el resultado inicial y se advierte al usuario para que lo revise. Las fotos sin posiciones utilizables o sin soporte de decodificación mantienen el análisis original.
