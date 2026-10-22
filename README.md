@@ -107,7 +107,7 @@ Esta sección reúne el alcance existente del primer examen. Los ajustes de IA, 
 - Entrada por texto o reconocimiento de voz desde el editor web.
 - Creación y modificación asistida de clases, atributos y relaciones.
 - Gemini como proveedor principal y GroqCloud como respaldo automático mediante configuración externa.
-- Tres credenciales de Gemini del mismo proyecto, con cuota compartida y cambio a GroqCloud ante límites o fallos.
+- Tres credenciales de Gemini de cuentas/proyectos independientes, utilizadas en orden 1 → 2 → 3; GroqCloud actúa como último respaldo ante límites o fallos. Cada credencial mantiene su propio tiempo de recuperación.
 - [Configuración y comportamiento del pipeline de IA](backend/software-parcial-backend-main/AI_PROVIDERS.md).
 - Validación de respuestas antes de incorporarlas al modelo editable.
 - Manejo controlado de errores y respaldo determinista para comandos soportados.
@@ -408,7 +408,7 @@ fvm flutter run
 | `DB_USER` | Usuario PostgreSQL |
 | `DB_PASSWORD` | Contraseña PostgreSQL |
 | `AUTH_TOKEN_SECRET` | Firma de tokens |
-| `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3` | Credenciales del mismo proyecto de Gemini; comparten cuota |
+| `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3` | Credenciales de cuentas/proyectos independientes; orden 1 → 2 → 3 y Groq al final |
 | `GEMINI_MODEL` | Modelo principal: `gemini-3.8-flash` |
 | `GROQ_API_KEY` | Credencial del proveedor de respaldo |
 | `GROQ_MODEL` | Modelo de texto: `openai/gpt-oss-120b` |

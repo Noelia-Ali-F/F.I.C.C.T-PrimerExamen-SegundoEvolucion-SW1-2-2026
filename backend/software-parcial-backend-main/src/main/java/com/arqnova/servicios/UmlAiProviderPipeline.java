@@ -29,10 +29,9 @@ public class UmlAiProviderPipeline {
     @Value("${GROQ_IMAGE_MAX_TOKENS:8192}") private int groqImageMaxTokens=8192;
     private final ObjectMapper mapper;
     private final HttpClient http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
-    // All three Gemini keys belong to ONE project. A quota error cools down the whole project.
-    private final AtomicLong geminiUnavailableUntil=new AtomicLong();
+    // Each Gemini credential belongs to an independent account/project.
     private final AtomicLong groqUnavailableUntil=new AtomicLong();
-    private final Map<Integer,Long> invalidKeysUntil=new ConcurrentHashMap<>();
+    private final Map<Integer,Long> geminiKeysUnavailableUntil=new ConcurrentHashMap<>();
     public record Result(String json,String provider,String model,boolean fallbackUsed) {}
     public UmlAiProviderPipeline(ObjectMapper mapper){this.mapper=mapper;}
     public boolean isConfigured(){return !geminiKeys().isEmpty()||!groqKey.isBlank();}
@@ -40,28 +39,25 @@ public class UmlAiProviderPipeline {
 
     public Result generate(String prompt,Map<String,Object> schema,String imageUrl) throws Exception {
         List<String> keys=geminiKeys();
-        int attempts=0,lastStatus=503;
-        if(System.currentTimeMillis()>=geminiUnavailableUntil.get()){
-            for(int i=0;i<keys.size();i++){
-                if(System.currentTimeMillis()<invalidKeysUntil.getOrDefault(i,0L))continue;
-                attempts++;
-                try{
-                    String json=gemini(prompt,schema,imageUrl,keys.get(i));
-                    return new Result(json,"GEMINI",geminiModel,attempts>1);
-                }catch(InterruptedException e){Thread.currentThread().interrupt();throw e;
-                }catch(UpstreamFailure e){
-                    lastStatus=e.status;
-                    log.warn("UML provider failed: provider=GEMINI credential={} status={}",i+1,e.status);
-                    if(e.status==401||e.status==403){invalidKeysUntil.put(i,System.currentTimeMillis()+300_000);continue;}
-                    // Another key of the same project cannot add quota or fix a shared outage.
-                    geminiUnavailableUntil.set(System.currentTimeMillis()+e.cooldownMillis);
-                    break;
-                }catch(java.io.IOException e){
-                    log.warn("UML provider failed: provider=GEMINI type={}",e.getClass().getSimpleName());
-                    geminiUnavailableUntil.set(System.currentTimeMillis()+30_000);break;
-                }
+        int attempts=0,lastStatus=keys.isEmpty()?503:429;
+        for(int i=0;i<keys.size();i++){
+            if(System.currentTimeMillis()<geminiKeysUnavailableUntil.getOrDefault(i,0L))continue;
+            attempts++;
+            try{
+                String json=gemini(prompt,schema,imageUrl,keys.get(i));
+                return new Result(json,"GEMINI",geminiModel,i>0||attempts>1);
+            }catch(InterruptedException e){Thread.currentThread().interrupt();throw e;
+            }catch(UpstreamFailure e){
+                lastStatus=e.status;
+                log.warn("UML provider failed: provider=GEMINI credential={} status={}",i+1,e.status);
+                if(e.status==401||e.status==403){geminiKeysUnavailableUntil.put(i,System.currentTimeMillis()+300_000);continue;}
+                geminiKeysUnavailableUntil.put(i,System.currentTimeMillis()+e.cooldownMillis);
+                continue;
+            }catch(java.io.IOException e){
+                log.warn("UML provider failed: provider=GEMINI type={}",e.getClass().getSimpleName());
+                geminiKeysUnavailableUntil.put(i,System.currentTimeMillis()+30_000);continue;
             }
-        }else lastStatus=429;
+        }
         if(!groqKey.isBlank()&&System.currentTimeMillis()>=groqUnavailableUntil.get()){
             try{
                 String selectedModel=imageUrl==null?groqModel:groqImageModel;

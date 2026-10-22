@@ -19,6 +19,7 @@ class UmlAiProviderPipelineTest {
     private String geminiJson="{\"ok\":true}",groqJson="{\"ok\":true}";
     private Map<?,?> geminiPayload,groqPayload;
     private boolean rejectLargeOutput;
+    private int quotaKeys;
     private String groqError="unavailable";
     private final List<String> keysSeen=new ArrayList<>();
     private UmlAiProviderPipeline pipeline;
@@ -29,7 +30,7 @@ class UmlAiProviderPipelineTest {
             int call=(isGemini?geminiCalls:groqCalls).incrementAndGet();
             var payload=mapper.readValue(exchange.getRequestBody(),Map.class);
             if(isGemini){geminiPayload=payload;keysSeen.add(exchange.getRequestHeaders().getFirst("x-goog-api-key"));}else groqPayload=payload;
-            int status=isGemini?(call<=rejectedKeys?401:geminiStatus):groqStatus;
+            int status=isGemini?(call<=rejectedKeys?401:keysSeen.size()<=quotaKeys?429:geminiStatus):groqStatus;
             if(!isGemini && rejectLargeOutput && ((Number)payload.get("max_completion_tokens")).intValue()>768)status=429;
             String body=status==200?mapper.writeValueAsString(isGemini?
                 Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text",geminiJson)))))):
@@ -52,14 +53,14 @@ class UmlAiProviderPipelineTest {
         rejectedKeys=2;var result=run();assertThat(result.provider()).isEqualTo("GEMINI");assertThat(result.fallbackUsed()).isTrue();
         assertThat(keysSeen).containsExactly("test-key-1","test-key-2","test-key-3");run();assertThat(keysSeen).hasSize(4);assertThat(keysSeen.get(3)).isEqualTo("test-key-3");
     }
-    @Test void cuotaCompartidaSaltaLasOtrasDosClavesYRespetaEnfriamiento() throws Exception {
-        geminiStatus=429;assertThat(run().provider()).isEqualTo("GROQ");assertThat(geminiCalls.get()).isEqualTo(1);assertThat(run().fallbackUsed()).isTrue();assertThat(geminiCalls.get()).isEqualTo(1);assertThat(groqCalls.get()).isEqualTo(2);
+    @Test void cuotasIndependientesPruebanTresClavesYRespetanEnfriamientos() throws Exception {
+        geminiStatus=429;assertThat(run().provider()).isEqualTo("GROQ");assertThat(geminiCalls.get()).isEqualTo(3);assertThat(run().fallbackUsed()).isTrue();assertThat(geminiCalls.get()).isEqualTo(3);assertThat(groqCalls.get()).isEqualTo(2);
     }
     @Test void tresCredencialesRechazadasPasanAGroqSinBucle() throws Exception {
         geminiStatus=403;assertThat(run().provider()).isEqualTo("GROQ");assertThat(geminiCalls.get()).isEqualTo(3);assertThat(groqCalls.get()).isEqualTo(1);
     }
     @Test void caidaDeGeminiUsaGroqUnaSolaVez() throws Exception {
-        geminiStatus=503;assertThat(run().provider()).isEqualTo("GROQ");assertThat(geminiCalls.get()).isEqualTo(1);assertThat(groqCalls.get()).isEqualTo(1);
+        geminiStatus=503;assertThat(run().provider()).isEqualTo("GROQ");assertThat(geminiCalls.get()).isEqualTo(3);assertThat(groqCalls.get()).isEqualTo(1);
     }
     @Test void jsonInvalidoNoLlegaAlEditorYUsaRespaldo() throws Exception {
         geminiJson="respuesta no JSON";assertThat(run().provider()).isEqualTo("GROQ");
@@ -68,7 +69,7 @@ class UmlAiProviderPipelineTest {
         geminiStatus=429;groqStatus=429;
         assertThatThrownBy(()->run()).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);
         assertThatThrownBy(()->run()).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);
-        assertThat(geminiCalls.get()).isEqualTo(1);assertThat(groqCalls.get()).isEqualTo(1);
+        assertThat(geminiCalls.get()).isEqualTo(3);assertThat(groqCalls.get()).isEqualTo(1);
     }
     @Test void imagenUsaModeloVisualEnGroqYConservaComposicionValidada() throws Exception {
         geminiStatus=429;
@@ -100,6 +101,18 @@ class UmlAiProviderPipelineTest {
         geminiStatus=503;groqStatus=429;groqError="output tokens per minute";
         assertThatThrownBy(()->pipeline.generate("Imagen",Map.of("type","object"),"data:image/png;base64,AQID")).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);
         assertThat(groqCalls.get()).isEqualTo(2);
+    }
+
+    @Test void primeraCuotaAgotadaUsaSegundaYNoConsultaGroq() throws Exception {
+        quotaKeys=1;var result=run();assertThat(result.provider()).isEqualTo("GEMINI");assertThat(result.fallbackUsed()).isTrue();assertThat(keysSeen).containsExactly("test-key-1","test-key-2");assertThat(groqCalls.get()).isZero();
+        run();assertThat(keysSeen).containsExactly("test-key-1","test-key-2","test-key-2");
+    }
+    @Test void dosCuotasAgotadasUsanTerceraAntesDeGroq() throws Exception {
+        quotaKeys=2;assertThat(run().provider()).isEqualTo("GEMINI");assertThat(keysSeen).containsExactly("test-key-1","test-key-2","test-key-3");assertThat(groqCalls.get()).isZero();
+    }
+    @Test void cuotaRestablecidaVuelveAPriorizarPrimeraClave() throws Exception {
+        quotaKeys=1;run();((Map<?,?>)ReflectionTestUtils.getField(pipeline,"geminiKeysUnavailableUntil")).clear();quotaKeys=0;
+        assertThat(run().provider()).isEqualTo("GEMINI");assertThat(keysSeen.get(keysSeen.size()-1)).isEqualTo("test-key-1");
     }
 
 }
