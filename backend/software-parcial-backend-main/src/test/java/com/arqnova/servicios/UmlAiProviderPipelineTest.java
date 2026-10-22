@@ -18,6 +18,8 @@ class UmlAiProviderPipelineTest {
     private int geminiStatus=200,groqStatus=200,rejectedKeys=0;
     private String geminiJson="{\"ok\":true}",groqJson="{\"ok\":true}";
     private Map<?,?> geminiPayload,groqPayload;
+    private boolean rejectLargeOutput;
+    private String groqError="unavailable";
     private final List<String> keysSeen=new ArrayList<>();
     private UmlAiProviderPipeline pipeline;
     @BeforeEach void setup() throws Exception {
@@ -28,9 +30,10 @@ class UmlAiProviderPipelineTest {
             var payload=mapper.readValue(exchange.getRequestBody(),Map.class);
             if(isGemini){geminiPayload=payload;keysSeen.add(exchange.getRequestHeaders().getFirst("x-goog-api-key"));}else groqPayload=payload;
             int status=isGemini?(call<=rejectedKeys?401:geminiStatus):groqStatus;
+            if(!isGemini && rejectLargeOutput && ((Number)payload.get("max_completion_tokens")).intValue()>768)status=429;
             String body=status==200?mapper.writeValueAsString(isGemini?
                 Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text",geminiJson)))))):
-                Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",groqJson))))):"{\"error\":{\"message\":\"unavailable\"}}";
+                Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",groqJson))))):mapper.writeValueAsString(Map.of("error",Map.of("message",isGemini?"unavailable":groqError)));
             byte[] bytes=body.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(status,bytes.length);exchange.getResponseBody().write(bytes);exchange.close();
         });server.start();
         pipeline=new UmlAiProviderPipeline(mapper);
@@ -88,4 +91,15 @@ class UmlAiProviderPipelineTest {
         var request=new com.arqnova.modelo.dto.request.UmlAiCommandRequest();request.setInstruction("Crea Libro");request.setModel(Map.of("classes",List.of(),"relations",List.of()));
         var result=interpreter.interpret(request);assertThat(result.getStatus()).isEqualTo("READY");assertThat(result.getInterpreter()).isEqualTo("GROQ");assertThat(result.isFallbackUsed()).isTrue();assertThat(result.getOperations()).hasSize(1);
     }
+    @Test void presupuestoVisualRechazadoSeReduceUnaSolaVez() throws Exception {
+        geminiStatus=503;rejectLargeOutput=true;groqError="output tokens per minute";
+        assertThat(pipeline.generate("Imagen",Map.of("type","object"),"data:image/png;base64,AQID").provider()).isEqualTo("GROQ");
+        assertThat(groqCalls.get()).isEqualTo(2);assertThat(groqPayload.get("max_completion_tokens")).isEqualTo(768);
+    }
+    @Test void cuotaDeSalidaAgotadaNoGeneraUnBucleDeReintentos() {
+        geminiStatus=503;groqStatus=429;groqError="output tokens per minute";
+        assertThatThrownBy(()->pipeline.generate("Imagen",Map.of("type","object"),"data:image/png;base64,AQID")).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);
+        assertThat(groqCalls.get()).isEqualTo(2);
+    }
+
 }

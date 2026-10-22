@@ -99,7 +99,7 @@ public class OpenAiUmlInterpreter {
                 Si una clase está unida mediante línea discontinua al centro de una asociación, es una clase de asociación: inclúyela en classes con sus atributos visibles y escribe su nombre exacto en associationClassName de esa relación. No la trates como clase independiente.
                 Si no existe esa clase vinculada, deja associationClassName vacío. No inventes nombres ni atributos.
                 isPrimaryKey solo puede ser true cuando la imagen lo indique explícitamente mediante PK, clave o un marcador inequívoco.
-                Antes de responder revisa silenciosamente cada nombre contra las letras de la imagen y cada tipo de relación contra ambos extremos de su propia línea. Elimina cualquier inferencia que no se vea dibujada. No añadas clases, atributos ni relaciones por convenciones de dominio.
+                Antes de responder revisa silenciosamente cada nombre contra las letras de la imagen y cada tipo de relación contra ambos extremos de su propia línea. Elimina cualquier inferencia que no se vea dibujada. No añadas clases, atributos ni relaciones por convenciones de dominio. Emite JSON compacto, sin sangría. En warnings incluye solo dudas reales, sin explicar símbolos claros ni repetir estas instrucciones.
                 """;
         OpenAiRequestTrace trace = new OpenAiRequestTrace();
         long startedAt = System.nanoTime();
@@ -273,7 +273,7 @@ public class OpenAiUmlInterpreter {
         try {
             var original=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(image.getBytes()));
             if(original==null) return;
-            int rowHeight=160,width=640;
+            int rowHeight=128,width=512;
             var sheet=new java.awt.image.BufferedImage(width,rowHeight*items.size(),java.awt.image.BufferedImage.TYPE_INT_RGB);
             var graphics=sheet.createGraphics();
             try {
@@ -295,8 +295,8 @@ public class OpenAiUmlInterpreter {
             var bytes=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(sheet,"jpeg",bytes);
             Map<String,Object> item=Map.of("type","object","properties",Map.of("index",Map.of("type","integer"),"name",Map.of("type",List.of("string","null"))),"required",List.of("index","name"));
             Map<String,Object> schema=Map.of("type","object","properties",Map.of("titles",Map.of("type","array","items",item)),"required",List.of("titles"));
-            String prompt="Transcribe solo el título manuscrito del recuadro de cada franja numerada #. Lee todas las letras, incluidos trazos finales. No interpretes ni corrijas palabras. Devuelve titles con index de la franja y name literal. Si el título está cortado o es ambiguo usa name=null. No transcribas atributos. Las franjas son recortes de un único diagrama; no son clases nuevas.";
-            Map<String,Object> checked=mapper.readValue(providerPipeline.transcribeImageTitles(prompt,schema,"data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(bytes.toByteArray())),new TypeReference<>() {});
+            String prompt="Transcribe solo el título manuscrito del recuadro de cada franja numerada #. Lee todas las letras, incluidos trazos finales. No interpretes ni corrijas palabras. Devuelve titles con index de la franja y name literal. Si el título está cortado o es ambiguo usa name=null. No transcribas atributos. Las franjas son recortes de un único diagrama; no son clases nuevas. Emite JSON compacto, sin sangría.";
+            Map<String,Object> checked=mapper.readValue(providerPipeline.transcribeImageTitles(prompt,schema,"data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(bytes.toByteArray()),32+items.size()*16),new TypeReference<>() {});
             reconcileImageTitles(raw,checked);
         } catch(Exception error) {
             if(error instanceof InterruptedException)Thread.currentThread().interrupt();
