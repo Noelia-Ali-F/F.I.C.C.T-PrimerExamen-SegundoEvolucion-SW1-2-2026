@@ -269,15 +269,16 @@ public class OpenAiUmlInterpreter {
         } else {verifyAssociationAttachments(raw,image);if("READY".equals(raw.get("status"))&&"GROQ".equals(providerResult.get().provider()))reviewFinalTitleStrokes(raw,image);}
     }
 
-    /** Triangles around n:n are ambiguous: ask about the visible attachment, never infer from a class name. */
+    /** Inspect every possible third box around n:n, even when the first read missed a connection. */
     @SuppressWarnings("unchecked")
     private void verifyAssociationAttachments(Map<String,Object> raw,MultipartFile image) throws Exception {
         List<Map<String,Object>> candidates=associationAttachmentCandidates(raw);
         if(candidates.isEmpty())return;
+        if(candidates.size()>32){raw.put("status","ERROR");raw.put("message","El diagrama requiere revisar demasiadas uniones a la vez. Analiza un encuadre más cercano por secciones.");return;}
         Map<String,Object> bool=Map.of("type","boolean");
         Map<String,Object> row=Map.of("type","array","prefixItems",List.of(Map.of("type","integer"),Map.of("type","string","enum",List.of("CENTER_DASHED","BINARY_LINES","UNCLEAR")),bool,bool),"minItems",4,"maxItems",4);
         Map<String,Object> schema=Map.of("type","object","properties",Map.of("attachments",Map.of("type","array","items",row)),"required",List.of("attachments"));
-        String prompt="Inspección VISUAL de trazos UML, no diseño de base de datos. La lectura anterior puede HABER INVENTADO dos líneas diagonales. Para cada candidato A--B y caja C, mira la FOTO: ¿de C sale una línea DISCONTINUA que termina en el CENTRO de A--B, sin tocar las cajas A/B? Entonces CENTER_DASHED (clase de asociación). No conviertas eso en dos asociaciones. Si de C salen realmente líneas hasta las cajas A/B usa BINARY_LINES. Si no lo distingues usa UNCLEAR. Además indica por separado si realmente existe una línea dibujada C--A y C--B, sin contar el camino que pasa por el centro de A--B. Los nombres solo identifican cajas; no deduzcas nada por sus atributos. Devuelve attachments=[[indice,veredicto,hayLineaDirectaCA,hayLineaDirectaCB]], una fila por candidato. Candidatos: "+mapper.writeValueAsString(candidates);
+        String prompt="Inspección VISUAL de trazos UML, no diseño de base de datos. La lectura anterior puede HABER INVENTADO dos líneas diagonales. Para cada candidato A--B y caja C, mira la FOTO: ¿de C sale una línea DISCONTINUA que termina en el CENTRO de A--B, sin tocar las cajas A/B? Entonces CENTER_DASHED (clase de asociación). No conviertas eso en dos asociaciones. Si NO hay unión discontinua al centro usa BINARY_LINES, incluso si C tiene solo una o ninguna línea hasta A/B. Usa UNCLEAR solo si ves una posible unión al centro pero no puedes distinguir su trazo. Además indica por separado si realmente existe una línea dibujada C--A y C--B, sin contar el camino que pasa por el centro de A--B. Los nombres solo identifican cajas; no deduzcas nada por sus atributos. Devuelve attachments=[[indice,veredicto,hayLineaDirectaCA,hayLineaDirectaCB]], una fila por candidato. Candidatos: "+mapper.writeValueAsString(candidates);
         var checked=mapper.readValue(providerPipeline.reviewImageGraph(providerResult.get(),prompt,schema,"data:"+image.getContentType()+";base64,"+Base64.getEncoder().encodeToString(image.getBytes()),Math.min(2048,128+candidates.size()*48)),new TypeReference<Map<String,Object>>() {});
         if(!applyAssociationAttachments(raw,candidates,checked)){raw.put("status","ERROR");raw.put("message","No se pudo distinguir la unión discontinua de la clase de asociación. Acerca la foto a esa unión y vuelve a analizar.");}
     }
@@ -289,9 +290,7 @@ public class OpenAiUmlInterpreter {
         for(Object value:rows)if(value instanceof Map<?,?> edge&&"association".equals(edge.get("type"))&&text(edge.get("sourceMultiplicity")).endsWith("*")&&text(edge.get("targetMultiplicity")).endsWith("*")&&text(edge.get("associationClassName")).isBlank()) {
             String a=text(edge.get("sourceClassName")),b=text(edge.get("targetClassName"));
             for(Object c:classes)if(c instanceof Map<?,?> clazz){String name=text(clazz.get("name"));if(name.equals(a)||name.equals(b))continue;
-                boolean toA=rows.stream().anyMatch(r->r instanceof Map<?,?> e&&isAssociationBetween(e,name,a));
-                boolean toB=rows.stream().anyMatch(r->r instanceof Map<?,?> e&&isAssociationBetween(e,name,b));
-                if(toA&&toB&&candidates.size()<16)candidates.add(Map.of("index",candidates.size(),"A",a,"B",b,"C",name));
+                candidates.add(Map.of("index",candidates.size(),"A",a,"B",b,"C",name));
             }
         }
         return candidates;

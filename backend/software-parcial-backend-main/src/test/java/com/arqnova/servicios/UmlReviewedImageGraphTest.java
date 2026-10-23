@@ -55,4 +55,13 @@ class UmlReviewedImageGraphTest {
   }
  }
 
+ @Test void revisaTambienLaClaseCuandoLaLecturaInicialOmiteUnaOLasDosLineas(){
+  for(int count:List.of(0,1)){
+   var raw=triangle("A","B","C");var edges=(List<Map<String,Object>>)raw.get("relations");raw.put("relations",new ArrayList<>(edges.subList(0,count+1)));
+   var candidates=interpreter.associationAttachmentCandidates(raw);assertThat(candidates).hasSize(1);
+   assertThat(interpreter.applyAssociationAttachments(raw,candidates,Map.of("attachments",List.of(List.of(0,"CENTER_DASHED",false,false))))).isTrue();
+   assertThat((List<?>)raw.get("relations")).hasSize(1);assertThat((Map<String,Object>)((List<?>)raw.get("relations")).get(0)).containsEntry("associationClassName","C");
+  }
+ }
+
 }
