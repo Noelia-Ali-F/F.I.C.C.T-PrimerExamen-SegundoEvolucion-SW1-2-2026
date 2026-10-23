@@ -49,7 +49,7 @@ public class OpenAiUmlInterpreter {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
     @Value("${app.openai.api-key:}") private String apiKey;
-    @Value("${app.openai.model:gpt-6.1-sol}") private String model;
+    @Value("${app.openai.model:gpt-6.1-sol}") private String model="gpt-6.1-sol";
     @Value("${app.openai.image-model:}") private String imageModel;
     @Value("${app.openai.base-url:https://api.openai.com/v1}") private String baseUrl;
     @Value("${app.openai.timeout-seconds:45}") private long timeoutSeconds;
@@ -79,27 +79,13 @@ public class OpenAiUmlInterpreter {
             throw new IllegalArgumentException("Formato no admitido. Usa PNG, JPG, JPEG o WEBP.");
         if (image.getSize() > 10L * 1024 * 1024) throw new IllegalArgumentException("La imagen no puede superar 10 MB.");
         String prompt = """
-                Analiza esta imagen únicamente como diagrama de clases UML. Devuelve JSON conforme al schema.
-                Transcribe los títulos letra por letra antes de interpretar su significado. No corrijas ni sustituyas palabras. Un trazo vertical al final de un nombre puede ser una letra l: no lo confundas con el borde del recuadro ni omitas sufijos.
-                Extrae todos los elementos visibles: clases, atributos, métodos, relaciones y multiplicidades. Revisa el diagrama completo, no solo las primeras líneas.
-                El compartimento inferior de una clase contiene métodos aunque estén escritos sin paréntesis. Conserva los nombres legibles; no inventes parámetros ni tipos de retorno.
-                Devuelve x e y como posición de la esquina superior izquierda de cada clase, normalizada entre 0 y 1 respecto a la imagen; null si no se puede ubicar.
-                Recorre cada línea desde un extremo hasta el otro, incluso si tiene codos o cambia de dirección. No omitas una relación por no ver una multiplicidad.
-                Clasifica CADA relación por separado usando únicamente el símbolo dibujado en SUS extremos. La presencia de un rombo en otra relación no se propaga a las demás.
-                Una línea continua que sale del borde de una clase, una esquina, un codo o una cifra de multiplicidad NO son rombos. Si los dos extremos son líneas simples, devuelve association, aunque la etiqueta sugiera pertenencia o solicitud.
-                Solo devuelve composition cuando puedas localizar un rombo cerrado relleno, con cuatro lados distinguibles, entre esa clase y esa misma línea. Solo devuelve aggregation si el rombo cerrado es hueco. Ante un símbolo dudoso conserva la línea como association y explica la duda en warnings; no inventes símbolos.
-                Rombo negro/relleno = composition; rombo hueco = aggregation; triángulo hueco = inheritance. En composición/agregación, sourceClassName es la clase junto al rombo, y targetClassName la otra clase. Conserva la etiqueta de la línea.
-                Si la multiplicidad no está escrita en un extremo, usa cadena vacía en ese extremo y añade una advertencia; no descartes la relación.
-                No inventes texto ilegible. Para cualquier incertidumbre agrega una advertencia en español.
-                Conserva nombres de atributos legibles aunque no tengan tipo escrito: devuelve type=null.
-                No deduzcas tipos ni PK a partir del nombre del atributo. Un atributo llamado Id no implica PK: sin marcador explícito devuelve isPrimaryKey=false.
-                Si no hay al menos una clase UML reconocible devuelve status=ERROR y explica el problema.
-                Usa tipos de relación: association, aggregation, composition, inheritance o dependency.
-                Usa multiplicidades UML como 1, 0..1, 0..*, 1..* o *.
-                Si una clase está unida mediante línea discontinua al centro de una asociación, es una clase de asociación: inclúyela en classes con sus atributos visibles y escribe su nombre exacto en associationClassName de esa relación. No la trates como clase independiente.
-                Si no existe esa clase vinculada, deja associationClassName vacío. No inventes nombres ni atributos.
-                isPrimaryKey solo puede ser true cuando la imagen lo indique explícitamente mediante PK, clave o un marcador inequívoco.
-                Antes de responder revisa silenciosamente cada nombre contra las letras de la imagen y cada tipo de relación contra ambos extremos de su propia línea. Elimina cualquier inferencia que no se vea dibujada. No añadas clases, atributos ni relaciones por convenciones de dominio. Emite JSON compacto, sin sangría. En warnings incluye solo dudas reales, sin explicar símbolos claros ni repetir estas instrucciones.
+                Transcribe TODO el diagrama de clases UML visible, sin rediseñarlo ni convertirlo en tablas relacionales. Devuelve JSON compacto conforme al schema.
+                Conserva literalmente nombres, idioma, mayúsculas y letras finales; no traduzcas ni corrijas palabras por convenciones. Una l manuscrita final no es el borde del recuadro.
+                Incluye clases, atributos y métodos. El compartimento inferior contiene métodos aunque no haya paréntesis. Sin tipos visibles devuelve null; sin marcador PK explícito devuelve isPrimaryKey=false, incluso para Id. No inventes parámetros ni retornos.
+                Recorre cada línea completa, también sus codos. Clasifica por el símbolo de ESA línea: rombo cerrado relleno=composition, hueco=aggregation, triángulo hueco=inheritance, línea simple=association, flecha discontinua=dependency. No confundas bordes, codos o números con rombos; si hay duda conserva association y advierte. En composition/aggregation el origen es la clase tocada por el rombo.
+                Cada multiplicidad pertenece al recuadro físicamente junto al que está escrita: sourceMultiplicity junto a sourceClassName y targetMultiplicity junto a targetClassName. No las inviertas por lógica del dominio ni simplifiques 1..* a *. Si falta una, devuelve cadena vacía y advierte.
+                Una clase conectada por línea discontinua al CENTRO de una asociación es clase de asociación, con cualquier nombre: inclúyela en classes y escribe su nombre en associationClassName de la asociación ORIGINAL, conservando ambos extremos y multiplicidades. No sustituyas ese vínculo por dos asociaciones a la clase intermedia. Sin esa clase, associationClassName vacío.
+                x,y son la esquina superior izquierda de cada clase dividida por el ancho/alto de la foto original, entre 0 y 1; null si no se ubica. Sin clases legibles devuelve status=ERROR. warnings breves solo para incertidumbres reales; no expliques símbolos claros ni inventes texto ilegible.
                 """;
         OpenAiRequestTrace trace = new OpenAiRequestTrace();
         long startedAt = System.nanoTime();
@@ -117,20 +103,21 @@ public class OpenAiUmlInterpreter {
             throw error;
         }
         if (json.isBlank()) throw new IllegalStateException("No se obtuvo un resultado del reconocimiento.");
-        Map<String,Object> raw = mapper.readValue(json, new TypeReference<>() {});
-        if (!Set.of("READY","ERROR").contains(String.valueOf(raw.get("status")))
-                || !(raw.get("classes") instanceof List<?>) || !(raw.get("relations") instanceof List<?>)
-                || !(raw.get("warnings") instanceof List<?>) || !(raw.get("message") instanceof String))
-            throw new IllegalArgumentException("Respuesta visual incompatible con el schema.");
-        var initialProvider=providerResult.get();
-        if(initialProvider!=null && "GROQ".equals(initialProvider.provider())) {
-            verifyHandwrittenTitles(raw,image);
-        }
-        Map<String,Object> result=new LinkedHashMap<>(validateImage(raw));
-        var used=providerResult.get();
-        if(used!=null){result.put("provider",used.provider());result.put("model",used.model());result.put("fallbackUsed",used.fallbackUsed());}
-        providerResult.remove();
-        return result;
+        try {
+            Map<String,Object> raw = mapper.readValue(json, new TypeReference<>() {});
+            if (!Set.of("READY","ERROR").contains(String.valueOf(raw.get("status")))
+                    || !(raw.get("classes") instanceof List<?>) || !(raw.get("relations") instanceof List<?>)
+                    || !(raw.get("warnings") instanceof List<?>) || !(raw.get("message") instanceof String))
+                throw new IllegalArgumentException("Respuesta visual incompatible con el schema.");
+            var initialProvider=providerResult.get();
+            if(initialProvider!=null && "GROQ".equals(initialProvider.provider())) {
+                verifyImageDetails(raw,image);
+            }
+            Map<String,Object> result=new LinkedHashMap<>(validateImage(raw));
+            var used=providerResult.get();
+            if(used!=null){result.put("provider",used.provider());result.put("model",used.model());result.put("fallbackUsed",used.fallbackUsed());}
+            return result;
+        } finally {providerResult.remove();}
     }
 
     public UmlAiCommandResponse interpret(UmlAiCommandRequest request) throws Exception {
@@ -267,43 +254,112 @@ public class OpenAiUmlInterpreter {
                 "required", List.of("status", "operations", "clarificationQuestion", "message"));
     }
 
+    private void verifyImageDetails(Map<String,Object> raw,MultipartFile image) throws Exception {
+        if(!(raw.get("classes") instanceof List<?> classes)||classes.isEmpty())return;
+        Map<String,Object> string=Map.of("type","string"),nullable=Map.of("type",List.of("string","null"));
+        Map<String,Object> relation=Map.of("type","array","prefixItems",List.of(string,string,string,string,nullable,nullable,nullable),"minItems",7,"maxItems",7);
+        Map<String,Object> schema=Map.of("type","object","properties",Map.of("status",Map.of("type","string","enum",List.of("READY","UNCLEAR")),"relations",Map.of("type","array","items",relation)),"required",List.of("status","relations"));
+        String prompt="Transcribe SOLO las líneas UML de esta FOTO ORIGINAL, no atributos. No rediseñes ni normalices a base de datos. Para cada conexión lee los nombres literales de sus cajas, su tipo y las multiplicidades FÍSICAMENTE pegadas a cada caja. No traduzcas ni simplifiques 1..* ni deduzcas números por el dominio. "
+                +"Una caja unida por línea discontinua al CENTRO de otra asociación es su clase de asociación: escribe su nombre en el último campo, conservando el vínculo original; NO crees asociaciones binarias entre esa caja y los extremos. Esa línea al centro no es otra asociación. "
+                +"Orden de extremos: en association primero izquierda/superior, segundo derecha/inferior; en composition/aggregation primero la caja junto al rombo cerrado relleno/hueco; en inheritance primero hijo y segundo padre junto al triángulo; en dependency primero origen y segundo destino de la flecha discontinua. Lee cada multiplicidad junto a SU caja, no al otro extremo. "
+                +"JSON compacto: status READY si se distinguen las conexiones o UNCLEAR si no; relations son arrays [nombrePrimeraCaja,nombreSegundaCaja,tipo,etiqueta,multiplicidadPegadaAPrimeraCaja,multiplicidadPegadaASegundaCaja,nombreClaseAsociaciónOvacío]. Incluye TODAS las conexiones directas. Si una multiplicidad no está escrita usa cadena vacía. No inventes clases ni texto ilegible.";
+        Map<String,Object> checked=mapper.readValue(providerPipeline.reviewImageGraph(prompt,schema,"data:"+image.getContentType()+";base64,"+Base64.getEncoder().encodeToString(image.getBytes()),512),new TypeReference<>() {});
+        if(!reconcileReviewedGraph(raw,checked)){
+            raw.put("status","ERROR");raw.put("message","No se pudo confirmar la estructura de las conexiones en la foto. Usa un encuadre más cercano donde se vean líneas y multiplicidades.");
+        } else {reviewFinalTitleStrokes(raw,image);}
+    }
+
     @SuppressWarnings("unchecked")
-    private void verifyHandwrittenTitles(Map<String,Object> raw,MultipartFile image) {
-        if (!(raw.get("classes") instanceof List<?> items) || items.isEmpty() || items.size()>12) return;
-        try {
-            var original=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(image.getBytes()));
-            if(original==null) return;
-            int rowHeight=128,width=512;
-            var sheet=new java.awt.image.BufferedImage(width,rowHeight*items.size(),java.awt.image.BufferedImage.TYPE_INT_RGB);
-            var graphics=sheet.createGraphics();
-            try {
-                graphics.setColor(java.awt.Color.WHITE);graphics.fillRect(0,0,width,sheet.getHeight());
-                graphics.setFont(new java.awt.Font("SansSerif",java.awt.Font.BOLD,20));
-                for(int i=0;i<items.size();i++) {
-                    if(!(items.get(i) instanceof Map<?,?> c) || !(c.get("x") instanceof Number nx) || !(c.get("y") instanceof Number ny)) return;
-                    double x=nx.doubleValue(),y=ny.doubleValue();
-                    if(!Double.isFinite(x)||!Double.isFinite(y)||x<0||y<0||x>=1||y>=1)return;
-                    int left=Math.max(0,(int)((x-.02)*original.getWidth())),top=Math.max(0,(int)((y-.025)*original.getHeight()));
-                    int cropWidth=Math.min(original.getWidth()-left,Math.max(1,(int)(original.getWidth()*.34)));
-                    int cropHeight=Math.min(original.getHeight()-top,Math.max(1,(int)(original.getHeight()*.13)));
-                    var crop=original.getSubimage(left,top,cropWidth,cropHeight);
-                    double scale=Math.min((width-20.0)/cropWidth,(rowHeight-35.0)/cropHeight);
-                    graphics.setColor(java.awt.Color.BLACK);graphics.drawString("#"+i,5,i*rowHeight+23);
-                    graphics.drawImage(crop,10,i*rowHeight+30,(int)(cropWidth*scale),(int)(cropHeight*scale),null);
+    boolean reconcileReviewedGraph(Map<String,Object> raw,Map<String,Object> checked) {
+        if(!"READY".equals(checked.get("status"))||!(raw.get("classes") instanceof List<?> original)||!(checked.get("relations") instanceof List<?> rows))return false;
+        List<Map<String,Object>> classes=new ArrayList<>();
+        for(Object value:original){if(!(value instanceof Map<?,?>))return false;classes.add(new LinkedHashMap<>((Map<String,Object>)value));}
+        Map<String,String> resolved=new LinkedHashMap<>(),renamed=new LinkedHashMap<>();
+        for(Object row:rows){
+            if(!(row instanceof List<?> fields)||fields.size()!=7)return false;
+            for(int index:List.of(0,1,6)){
+                String name=text(fields.get(index));if(name.isBlank()){if(index<2)return false;continue;}
+                if(resolved.containsKey(normalize(name)))continue;
+                Map<String,Object> match=findUnique(classes,name);
+                if(match==null){
+                    var candidates=classes.stream().filter(c->isMinorTitleCorrection(text(c.get("name")),name)).toList();
+                    if(candidates.size()!=1)return false;match=candidates.get(0);
+                    String old=text(match.get("name"));if(renamed.containsKey(old)&&!normalize(renamed.get(old)).equals(normalize(name)))return false;
+                    renamed.put(old,name);
                 }
-            } finally {graphics.dispose();}
-            var bytes=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(sheet,"jpeg",bytes);
-            Map<String,Object> item=Map.of("type","object","properties",Map.of("index",Map.of("type","integer"),"name",Map.of("type",List.of("string","null"))),"required",List.of("index","name"));
-            Map<String,Object> schema=Map.of("type","object","properties",Map.of("titles",Map.of("type","array","items",item)),"required",List.of("titles"));
-            String prompt="Transcribe solo el título manuscrito del recuadro de cada franja numerada #. Lee todas las letras, incluidos trazos finales. No interpretes ni corrijas palabras. Devuelve titles con index de la franja y name literal. Si el título está cortado o es ambiguo usa name=null. No transcribas atributos. Las franjas son recortes de un único diagrama; no son clases nuevas. Emite JSON compacto, sin sangría.";
-            Map<String,Object> checked=mapper.readValue(providerPipeline.transcribeImageTitles(prompt,schema,"data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(bytes.toByteArray()),32+items.size()*16),new TypeReference<>() {});
-            reconcileImageTitles(raw,checked);
-        } catch(Exception error) {
-            if(error instanceof InterruptedException)Thread.currentThread().interrupt();
-            var warnings=new ArrayList<String>();if(raw.get("warnings") instanceof List<?> old)old.forEach(w->warnings.add(String.valueOf(w)));
-            warnings.add("No se pudo completar la revisión ampliada de los títulos; revisa los nombres manuscritos antes de insertar el diagrama.");raw.put("warnings",warnings);
-            log.warn("UML title verification unavailable: {}",error.getClass().getSimpleName());
+                resolved.put(normalize(name),text(match.get("name")));
+            }
         }
+        Set<String> unique=new java.util.HashSet<>();
+        for(var c:classes){String old=text(c.get("name")),name=renamed.getOrDefault(old,old);if(!unique.add(normalize(name)))return false;c.put("name",name);}
+        List<Map<String,Object>> relations=new ArrayList<>();
+        for(Object row:rows){
+            var fields=(List<?>)row;String type=text(fields.get(2));if(!RELATION_TYPES.contains(type))return false;
+            var relation=new LinkedHashMap<String,Object>();
+            for(int index:List.of(0,1,6)){
+                String name=text(fields.get(index)),old=resolved.get(normalize(name)),canonical=old==null?"":renamed.getOrDefault(old,old);
+                relation.put(index==0?"sourceClassName":index==1?"targetClassName":"associationClassName",canonical);
+            }
+            relation.put("type",type);relation.put("label",cleanText(fields.get(3),120));
+            for(int index:List.of(4,5)){
+                String multiplicity=text(fields.get(index));if(!multiplicity.isBlank()&&!multiplicity.matches(MULTIPLICITY))return false;
+                String endpoint=index==4?"sourceMultiplicity":"targetMultiplicity";
+                if(!multiplicity.isBlank()&&raw.get("relations") instanceof List<?> previous){
+                    for(Object old:previous)if(old instanceof Map<?,?> prior&&type.equals(prior.get("type"))){
+                        boolean same=normalize(text(prior.get("sourceClassName"))).equals(normalize(resolved.get(normalize(text(fields.get(0))))))&&normalize(text(prior.get("targetClassName"))).equals(normalize(resolved.get(normalize(text(fields.get(1))))));
+                        boolean reverse=normalize(text(prior.get("sourceClassName"))).equals(normalize(resolved.get(normalize(text(fields.get(1))))))&&normalize(text(prior.get("targetClassName"))).equals(normalize(resolved.get(normalize(text(fields.get(0))))));
+                        String priorEndpoint=reverse?(index==4?"targetMultiplicity":"sourceMultiplicity"):endpoint;
+                        if((same||reverse)&&prior.containsKey(priorEndpoint)&&text(prior.get(priorEndpoint)).isBlank())multiplicity="";
+                    }
+                }
+                relation.put(endpoint,multiplicity);
+            }
+            if(!text(relation.get("associationClassName")).isBlank()&&(relation.get("associationClassName").equals(relation.get("sourceClassName"))||relation.get("associationClassName").equals(relation.get("targetClassName"))))return false;
+            relations.add(relation);
+        }
+        raw.put("classes",classes);raw.put("relations",relations);return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void reviewFinalTitleStrokes(Map<String,Object> raw,MultipartFile image) {
+        if(!(raw.get("classes") instanceof List<?> classes)||classes.isEmpty()||classes.size()>12)return;
+        try {
+            var original=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(image.getBytes()));if(original==null)return;
+            int width=512,rowHeight=128;var sheet=new java.awt.image.BufferedImage(width,rowHeight*classes.size(),java.awt.image.BufferedImage.TYPE_INT_RGB);var g=sheet.createGraphics();
+            try {
+                g.setColor(java.awt.Color.WHITE);g.fillRect(0,0,width,sheet.getHeight());g.setFont(new java.awt.Font("SansSerif",java.awt.Font.BOLD,20));
+                for(int i=0;i<classes.size();i++){
+                    if(!(classes.get(i) instanceof Map<?,?> c)||!(c.get("x") instanceof Number nx)||!(c.get("y") instanceof Number ny))return;
+                    double x=nx.doubleValue(),y=ny.doubleValue();if(!Double.isFinite(x)||!Double.isFinite(y)||x<0||x>=1||y<0||y>=1)return;
+                    int left=Math.max(0,(int)((x-.02)*original.getWidth())),top=Math.max(0,(int)((y-.025)*original.getHeight()));
+                    int w=Math.min(original.getWidth()-left,Math.max(1,(int)(original.getWidth()*.34))),h=Math.min(original.getHeight()-top,Math.max(1,(int)(original.getHeight()*.13)));
+                    double scale=Math.min((width-20.0)/w,(rowHeight-35.0)/h);g.setColor(java.awt.Color.BLACK);g.drawString("#"+i,5,i*rowHeight+23);g.drawImage(original.getSubimage(left,top,w,h),10,i*rowHeight+30,(int)(w*scale),(int)(h*scale),null);
+                }
+            } finally {g.dispose();}
+            var bytes=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(sheet,"jpeg",bytes);
+            Map<String,Object> item=Map.of("type","array","prefixItems",List.of(Map.of("type","integer"),Map.of("type",List.of("string","null"))),"minItems",2,"maxItems",2);
+            Map<String,Object> schema=Map.of("type","object","properties",Map.of("titles",Map.of("type","array","items",item)),"required",List.of("titles"));
+            String prompt="Transcribe SOLO el título manuscrito de cada franja numerada, incluidas letras finales. No traduzcas ni inventes puntuación: distingue l de ! y del borde del recuadro. Si está cortado o no se lee usa null. JSON compacto titles=[[índice,título literal]].";
+            Map<String,Object> checked=mapper.readValue(providerPipeline.reviewImageGraph(prompt,schema,"data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(bytes.toByteArray()),32+classes.size()*16),new TypeReference<>() {});
+            reconcileFinalTitleStrokes(raw,checked);
+        } catch(Exception error){
+            if(error instanceof InterruptedException)Thread.currentThread().interrupt();
+            var warnings=new ArrayList<String>();if(raw.get("warnings") instanceof List<?> list)list.forEach(v->warnings.add(String.valueOf(v)));
+            warnings.add("No se pudo confirmar alguna letra final de los títulos; revisa los nombres manuscritos.");raw.put("warnings",warnings);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    void reconcileFinalTitleStrokes(Map<String,Object> raw,Map<String,Object> checked) {
+        if(!(raw.get("classes") instanceof List<?> classes))return;
+    if(!(checked.get("titles") instanceof List<?> rows))return;
+    List<Map<String,Object>> titles=new ArrayList<>();
+    for(Object value:rows)if(value instanceof List<?> fields&&fields.size()==2&&fields.get(0) instanceof Number index&&index.doubleValue()==index.intValue()&&index.intValue()>=0&&index.intValue()<classes.size()){
+        var c=(Map<String,Object>)classes.get(index.intValue());String old=text(c.get("name")),candidate=text(fields.get(1));String a=normalize(old),b=normalize(candidate);
+        boolean finalStroke=b.startsWith(a)&&b.length()==a.length()+1&&Set.of('l','i').contains(b.charAt(b.length()-1));
+        titles.add(Map.of("index",index.intValue(),"name",finalStroke?candidate:old));
+    }
+    reconcileImageTitles(raw,Map.of("titles",titles));
     }
 
     @SuppressWarnings("unchecked")
@@ -320,6 +376,7 @@ public class OpenAiUmlInterpreter {
         for(int i=0;i<classes.size();i++) {
             if(!(classes.get(i) instanceof Map<?,?> c))return;
             String old=text(c.get("name")),name=replacements.getOrDefault(i,old);
+            if(!isMinorTitleCorrection(old,name)||(!normalize(old).equals(normalize(name))&&findUnique((List<Map<String,Object>>)classes,name)!=null)){name=old;replacements.remove(i);}
             if(!unique.add(name.toLowerCase(Locale.ROOT)))return;names.put(old,name);
         }
         List<Map<String,Object>> renamed=new ArrayList<>();
@@ -338,6 +395,21 @@ public class OpenAiUmlInterpreter {
             var warnings=new ArrayList<String>();if(raw.get("warnings") instanceof List<?> old)old.forEach(w->warnings.add(String.valueOf(w)));
             warnings.add("Algún título no se lee completo en la revisión ampliada; revisa los nombres antes de insertar el diagrama.");raw.put("warnings",warnings);
         }
+    }
+
+    private boolean isMinorTitleCorrection(String original,String candidate) {
+        String a=normalize(original).replaceAll("[\\s_-]",""),b=normalize(candidate).replaceAll("[\\s_-]","");
+        if(a.equals(b))return true;
+        if(Math.min(a.length(),b.length())<4)return false;
+        int limit=Math.min(2,Math.max(a.length(),b.length())/6);
+        if(Math.abs(a.length()-b.length())>limit)return false;
+        int[] previous=new int[b.length()+1];for(int j=0;j<previous.length;j++)previous[j]=j;
+        for(int i=1;i<=a.length();i++){
+            int[] current=new int[b.length()+1];current[0]=i;
+            for(int j=1;j<=b.length();j++)current[j]=Math.min(Math.min(previous[j]+1,current[j-1]+1),previous[j-1]+(a.charAt(i-1)==b.charAt(j-1)?0:1));
+            previous=current;
+        }
+        return previous[b.length()]<=limit;
     }
 
     private Map<String,Object> imageSchema() {
@@ -374,13 +446,17 @@ public class OpenAiUmlInterpreter {
         for(Object item:rawClasses){if(!(item instanceof Map<?,?> map))continue;String name=validName(map.get("name"));if(name==null||exists(classes,name)){warnings.add("Se descartó una clase con nombre ilegible o duplicado.");continue;}List<Map<String,Object>> attrs=validateImageAttributes(map.get("attributes"),warnings);Map<String,Object> clazz=new LinkedHashMap<>(Map.of("name",name,"attributes",attrs,"methods",validateImageMethods(map.get("methods"),warnings)));for(String axis:List.of("x","y")){Object coordinate=map.get(axis);if(coordinate instanceof Number value&&Double.isFinite(value.doubleValue())&&value.doubleValue()>=0&&value.doubleValue()<=1)clazz.put(axis,value.doubleValue());}classes.add(clazz);}
         if(classes.isEmpty()) return Map.of("status","ERROR","classes",List.of(),"relations",List.of(),"warnings",warnings,"message","No se reconoció ninguna clase UML con suficiente claridad.","provider","OPENAI","model",visionModel());
         List<Map<String,Object>> relations=new ArrayList<>();
-        if(raw.get("relations") instanceof List<?> rawRelations) for(Object item:rawRelations){if(!(item instanceof Map<?,?> any))continue;Map<String,Object> relation=(Map<String,Object>)any;Map<String,Object> source=findUnique(classes,text(relation.get("sourceClassName"))),target=findUnique(classes,text(relation.get("targetClassName")));Map<String,Object> clean=new LinkedHashMap<>();clean.put("sourceClassName",source==null?"":source.get("name"));clean.put("targetClassName",target==null?"":target.get("name"));clean.put("type",text(relation.get("type")));clean.put("label",cleanText(relation.get("label"),120));clean.put("sourceMultiplicity",imageMultiplicity(relation.get("sourceMultiplicity"),warnings));clean.put("targetMultiplicity",imageMultiplicity(relation.get("targetMultiplicity"),warnings));if(source==null||target==null||!validRelation(clean)){warnings.add("Se descartó una relación con extremos o multiplicidades poco claros.");continue;}String associationClassName=text(relation.get("associationClassName"));Map<String,Object> associationClass=associationClassName.isBlank()?null:findUnique(classes,associationClassName);clean.put("associationClassName",associationClass==null?"":associationClass.get("name"));relations.add(clean);}
+        if(raw.get("relations") instanceof List<?> rawRelations) for(Object item:rawRelations){if(!(item instanceof Map<?,?> any))continue;Map<String,Object> relation=(Map<String,Object>)any;Map<String,Object> source=findUnique(classes,text(relation.get("sourceClassName"))),target=findUnique(classes,text(relation.get("targetClassName")));Map<String,Object> clean=new LinkedHashMap<>();clean.put("sourceClassName",source==null?"":source.get("name"));clean.put("targetClassName",target==null?"":target.get("name"));clean.put("type",text(relation.get("type")));clean.put("label",cleanText(relation.get("label"),120));clean.put("sourceMultiplicity",imageMultiplicity(relation.get("sourceMultiplicity"),warnings));clean.put("targetMultiplicity",imageMultiplicity(relation.get("targetMultiplicity"),warnings));if(source==null||target==null||!validImageRelation(clean)){warnings.add("Se descartó una relación con extremos o multiplicidades poco claros.");continue;}String associationClassName=text(relation.get("associationClassName"));Map<String,Object> associationClass=associationClassName.isBlank()?null:findUnique(classes,associationClassName);clean.put("associationClassName",associationClass==null?"":associationClass.get("name"));relations.add(clean);}
         Map<String,Object> result=new LinkedHashMap<>();result.put("status","READY");result.put("classes",classes);result.put("relations",relations);result.put("warnings",warnings);result.put("message",message.isBlank()?"Imagen analizada. Revisa el resultado antes de insertarlo.":message);result.put("provider","OPENAI");result.put("model",visionModel());return result;
+    }
+
+    private boolean validImageRelation(Map<String,Object> relation) {
+        return RELATION_TYPES.contains(text(relation.get("type")))&&List.of("sourceMultiplicity","targetMultiplicity").stream().allMatch(k->text(relation.get(k)).isBlank()||text(relation.get(k)).matches(MULTIPLICITY));
     }
 
     private String imageMultiplicity(Object value,List<String> warnings){
         String multiplicity=text(value).replaceAll("\\s+", "").replaceAll("\\.{3,}","..");
-        if(multiplicity.isBlank()){warnings.add("Una multiplicidad no está indicada en la imagen; se usa 1 provisionalmente y puede editarse en el Inspector.");return "1";}
+        if(multiplicity.isBlank()){warnings.add("Una multiplicidad no está indicada o no se lee en la imagen; se conserva vacía sin inventar un número.");return "";}
         return multiplicity;
     }
     private List<Map<String,Object>> validateImageMethods(Object value,List<String> warnings){

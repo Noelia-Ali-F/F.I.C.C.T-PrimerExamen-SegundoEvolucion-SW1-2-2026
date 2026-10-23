@@ -17,7 +17,10 @@ class UmlAiProviderPipelineTest {
     private final AtomicInteger geminiCalls=new AtomicInteger(),groqCalls=new AtomicInteger();
     private int geminiStatus=200,groqStatus=200,rejectedKeys=0;
     private String geminiJson="{\"ok\":true}",groqJson="{\"ok\":true}";
+    private String groqReviewJson;
     private Map<?,?> geminiPayload,groqPayload;
+    private int reviewQuotaAttempts;
+    private String reviewRetryAfter="0.001";
     private boolean rejectLargeOutput;
     private int quotaKeys;
     private String groqError="unavailable";
@@ -32,9 +35,10 @@ class UmlAiProviderPipelineTest {
             if(isGemini){geminiPayload=payload;keysSeen.add(exchange.getRequestHeaders().getFirst("x-goog-api-key"));}else groqPayload=payload;
             int status=isGemini?(call<=rejectedKeys?401:keysSeen.size()<=quotaKeys?429:geminiStatus):groqStatus;
             if(!isGemini && rejectLargeOutput && ((Number)payload.get("max_completion_tokens")).intValue()>768)status=429;
+            if(!isGemini&&call<=reviewQuotaAttempts){status=429;exchange.getResponseHeaders().add("Retry-After",reviewRetryAfter);}
             String body=status==200?mapper.writeValueAsString(isGemini?
                 Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text",geminiJson)))))):
-                Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",groqJson))))):mapper.writeValueAsString(Map.of("error",Map.of("message",isGemini?"unavailable":groqError)));
+                Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",groqReviewJson!=null&&((Number)payload.get("max_completion_tokens")).intValue()<=512?groqReviewJson:groqJson))))):mapper.writeValueAsString(Map.of("error",Map.of("message",isGemini?"unavailable":groqError)));
             byte[] bytes=body.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(status,bytes.length);exchange.getResponseBody().write(bytes);exchange.close();
         });server.start();
         pipeline=new UmlAiProviderPipeline(mapper);
@@ -73,6 +77,7 @@ class UmlAiProviderPipelineTest {
     }
     @Test void imagenUsaModeloVisualEnGroqYConservaComposicionValidada() throws Exception {
         geminiStatus=429;
+        groqReviewJson="{\"status\":\"READY\",\"relations\":[[\"Pedido\",\"Detalle\",\"composition\",\"contiene\",\"1\",\"1..*\",\"\"]]}";
         groqJson="""
           {"status":"READY","message":"ok","warnings":[],"classes":[{"name":"Pedido","attributes":[],"methods":[],"x":0.1,"y":0.1},{"name":"Detalle","attributes":[],"methods":[],"x":0.4,"y":0.5}],"relations":[{"sourceClassName":"Pedido","targetClassName":"Detalle","type":"composition","label":"contiene","sourceMultiplicity":"1","targetMultiplicity":"1..*","associationClassName":""}]}
           """;
@@ -113,6 +118,25 @@ class UmlAiProviderPipelineTest {
     @Test void cuotaRestablecidaVuelveAPriorizarPrimeraClave() throws Exception {
         quotaKeys=1;run();((Map<?,?>)ReflectionTestUtils.getField(pipeline,"geminiKeysUnavailableUntil")).clear();quotaKeys=0;
         assertThat(run().provider()).isEqualTo("GEMINI");assertThat(keysSeen.get(keysSeen.size()-1)).isEqualTo("test-key-1");
+    }
+
+    @Test void revisionVisualRespetaPausaCortaYReintentaSoloUnaVez() throws Exception {
+        reviewQuotaAttempts=1;groqError="input tokens per minute";
+        assertThat(pipeline.reviewImageGraph("Verifica",Map.of("type","object"),"data:image/png;base64,AQID",128)).contains("ok");assertThat(groqCalls.get()).isEqualTo(2);
+    }
+    @Test void revisionVisualNoReintentaIndefinidamenteUnaCuotaAgotada() {
+        reviewQuotaAttempts=3;groqError="input tokens per minute";
+        assertThatThrownBy(()->pipeline.reviewImageGraph("Verifica",Map.of("type","object"),"data:image/png;base64,AQID",128)).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);assertThat(groqCalls.get()).isEqualTo(2);
+    }
+    @Test void revisionVisualNoBloqueaLaSolicitudCuandoLaPausaEsLarga() {
+        reviewQuotaAttempts=3;reviewRetryAfter="20";
+        assertThatThrownBy(()->pipeline.reviewImageGraph("Verifica",Map.of("type","object"),"data:image/png;base64,AQID",128)).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);assertThat(groqCalls.get()).isEqualTo(1);
+    }
+    @Test void conexionesNoConfirmadasNoSeDevuelvenComoDiagramaListo() throws Exception {
+        geminiStatus=429;groqJson="{\"status\":\"READY\",\"message\":\"ok\",\"warnings\":[],\"classes\":[{\"name\":\"Solo\",\"attributes\":[],\"methods\":[],\"x\":0.1,\"y\":0.1}],\"relations\":[]}";
+        groqReviewJson="{\"status\":\"UNCLEAR\",\"relations\":[]}";
+        var interpreter=new OpenAiUmlInterpreter(mapper);ReflectionTestUtils.setField(interpreter,"providerPipeline",pipeline);
+        assertThat(interpreter.analyzeImage(new MockMultipartFile("image","foto.png","image/png",new byte[]{1,2,3}))).containsEntry("status","ERROR");
     }
 
 }

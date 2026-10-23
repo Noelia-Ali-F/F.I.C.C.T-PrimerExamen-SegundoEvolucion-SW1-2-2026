@@ -91,8 +91,16 @@ public class UmlAiProviderPipeline {
         return jsonObject(text.toString());
     }
 
-    public String transcribeImageTitles(String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
-        return groq(prompt,schema,imageUrl,groqImageModel,Math.max(64,Math.min(512,maxTokens)));
+    public String reviewImageGraph(String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
+        int budget=Math.max(64,Math.min(512,maxTokens));
+        try{return groq(prompt,schema,imageUrl,groqImageModel,budget);}
+        catch(UpstreamFailure error){
+            if(error.status==429&&error.retryAfterMillis>0&&error.retryAfterMillis<=10_000){
+                Thread.sleep(error.retryAfterMillis+100);
+                try{return groq(prompt,schema,imageUrl,groqImageModel,budget);}
+                catch(UpstreamFailure retryError){throw new OpenAiUmlInterpreter.ProviderException(retryError.status);}
+            }throw new OpenAiUmlInterpreter.ProviderException(error.status);
+        }
     }
 
     private String groq(String prompt,Map<String,Object> schema,String imageUrl,String selectedModel) throws Exception {
@@ -108,7 +116,7 @@ public class UmlAiProviderPipeline {
 
     private String groq(String prompt,Map<String,Object> schema,String imageUrl,String selectedModel,int maxTokens) throws Exception {
         boolean compact=imageUrl!=null && ((Map<?,?>)schema.getOrDefault("properties",Map.of())).containsKey("classes");
-        if(compact){schema=tupleImageSchema();prompt+="\nFORMATO DE SALIDA OBLIGATORIO: classes contiene arrays [nombre, atributos, métodos, x, y]. Cada atributo es [nombre,tipo,esPK] y cada método [nombre,parámetros,tipoRetorno]. relations contiene arrays [origen,destino,tipo,etiqueta,multiplicidadOrigen,multiplicidadDestino,claseAsociación]. No uses objetos dentro de classes ni relations. Ejemplo: {\"status\":\"READY\",\"classes\":[[\"Ejemplo\",[[\"dato\",null,false]],[],0.1,0.2]],\"relations\":[],\"warnings\":[],\"message\":\"ok\"}. En composición el origen es la clase junto al rombo. JSON compacto sin sangría.";}
+        if(compact){schema=tupleImageSchema();prompt+="\nFORMATO DE SALIDA OBLIGATORIO: classes contiene arrays [nombre, atributos, métodos, x, y]. Cada atributo es [nombre,tipo,esPK] y cada método [nombre,parámetros,tipoRetorno]. relations contiene arrays [origen,destino,tipo,etiqueta,multiplicidadOrigen,multiplicidadDestino,claseAsociación]. No uses objetos dentro de classes ni relations. Ejemplo: {\"status\":\"READY\",\"classes\":[[\"Ejemplo\",[[\"dato\",null,false]],[],0.1,0.2]],\"relations\":[],\"warnings\":[],\"message\":\"ok\"}. En composición el origen es la clase junto al rombo. Una clase unida con línea discontinua a la asociación se indica únicamente en la séptima posición de esa asociación, conservando el vínculo original y sus multiplicidades; no se sustituye por dos relaciones nuevas. Conserva los nombres originales en su idioma, sin traducción. JSON compacto sin sangría.";}
 
         List<Map<String,Object>> content=new ArrayList<>();
         content.add(Map.of("type","text","text",prompt+"\nDevuelve exclusivamente un objeto JSON con este JSON Schema: "+mapper.writeValueAsString(schema)));
@@ -121,7 +129,7 @@ public class UmlAiProviderPipeline {
             payload.put("response_format",Map.of("type","json_schema","json_schema",Map.of("name","uml_command","strict",true,"schema",schema)));
         }else payload.put("response_format",Map.of("type","json_object"));
         JsonNode data=post(groqBaseUrl+"/chat/completions",Map.of("Authorization","Bearer "+groqKey),payload);
-        if(imageUrl!=null)log.info("UML vision usage: completionTokens={} maxTokens={}",data.path("usage").path("completion_tokens").asInt(-1),maxTokens);
+        if(imageUrl!=null)log.info("UML vision usage: promptTokens={} completionTokens={} maxTokens={}",data.path("usage").path("prompt_tokens").asInt(-1),data.path("usage").path("completion_tokens").asInt(-1),maxTokens);
         JsonNode choice=data.path("choices").path(0);
         if(!"stop".equals(choice.path("finish_reason").asText()))throw new UpstreamFailure(502,60_000);
         String json=jsonObject(choice.path("message").path("content").asText(""));
@@ -170,7 +178,14 @@ public class UmlAiProviderPipeline {
             long cooldown=60_000;
             try{cooldown=Math.max(cooldown,Math.min(86_400,Long.parseLong(response.headers().firstValue("Retry-After").orElse("60")))*1000);}catch(NumberFormatException ignored){}
             String quota=response.body().contains("input tokens per minute")?"INPUT_TOKENS":response.body().contains("output tokens per minute")?"OUTPUT_TOKENS":"REQUESTS";
-            throw new UpstreamFailure(response.statusCode(),cooldown,quota);
+            if(response.statusCode()==429){
+                var numbers=java.util.regex.Pattern.compile("(Limit|Used|Requested)\\s+([0-9,.]+)").matcher(response.body());
+                List<String> amounts=new ArrayList<>();while(numbers.find())amounts.add(numbers.group(1)+"="+numbers.group(2));
+                log.warn("UML quota limit: kind={} values={}",quota,amounts);
+            }
+            long retryAfterMillis=0;
+            try{retryAfterMillis=Math.max(0,(long)Math.ceil(Double.parseDouble(response.headers().firstValue("Retry-After").orElse("0"))*1000));}catch(NumberFormatException ignored){}
+            throw new UpstreamFailure(response.statusCode(),cooldown,quota,retryAfterMillis);
         }
         return mapper.readTree(response.body());
     }
@@ -182,8 +197,9 @@ public class UmlAiProviderPipeline {
         return clean;
     }
     private static class UpstreamFailure extends Exception {
-        final int status;final long cooldownMillis;final String quota;
+        final int status;final long cooldownMillis;final String quota;final long retryAfterMillis;
         UpstreamFailure(int status,long cooldown){this(status,cooldown,"UNKNOWN");}
-        UpstreamFailure(int status,long cooldown,String quota){super("AI provider status "+status+" limit="+quota);this.status=status;this.cooldownMillis=cooldown;this.quota=quota;}
+        UpstreamFailure(int status,long cooldown,String quota){this(status,cooldown,quota,0);}
+        UpstreamFailure(int status,long cooldown,String quota,long retryAfterMillis){super("AI provider status "+status+" limit="+quota);this.status=status;this.cooldownMillis=cooldown;this.quota=quota;this.retryAfterMillis=retryAfterMillis;}
     }
 }

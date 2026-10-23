@@ -27,7 +27,7 @@ class OpenAiUmlInterpreterTest {
         for(String whole:List.of("Catalogo","Pedido","Biblioteca")){
             var classes=List.of(Map.of("name",whole,"attributes",List.of(),"methods",List.of(Map.of("name","Buscar por Autor","parameters","","returnType","")),"x",0.1,"y",0.2),Map.of("name","Detalle","attributes",List.of()));
             var result=value.validateImage(Map.of("status","READY","message","ok","warnings",List.of(),"classes",classes,"relations",List.of(Map.of("sourceClassName",whole,"targetClassName","Detalle","type","composition","label","registra","sourceMultiplicity","1...*","targetMultiplicity",""))));
-            var relations=(List<Map<String,Object>>)result.get("relations");assertThat(relations).hasSize(1);assertThat(relations.get(0)).containsEntry("type","composition").containsEntry("sourceClassName",whole).containsEntry("sourceMultiplicity","1..*").containsEntry("targetMultiplicity","1");
+            var relations=(List<Map<String,Object>>)result.get("relations");assertThat(relations).hasSize(1);assertThat(relations.get(0)).containsEntry("type","composition").containsEntry("sourceClassName",whole).containsEntry("sourceMultiplicity","1..*").containsEntry("targetMultiplicity","");
             var detected=(List<Map<String,Object>>)result.get("classes");assertThat(detected.get(0)).containsEntry("x",0.1).containsEntry("y",0.2);assertThat((List<?>)detected.get(0).get("methods")).hasSize(1);assertThat((List<?>)result.get("warnings")).isNotEmpty();
         }
     }

@@ -348,14 +348,15 @@ describe('UmlClassDiagramComponent', () => {
     expect(stored.relations[0].associationClassId).toBe(linked!.id);
   });
 
-  it('crea clase de asociación desde foto con multiplicidades 1..* a 1..*', () => {
+  it('no inventa una clase adicional si la foto solo contiene una asociación muchos a muchos', () => {
     component.imageAnalysis.set({status:'READY',provider:'OPENAI',model:'test',message:'ok',warnings:[],classes:[
       {name:'Alumno',attributes:[]},{name:'Materia',attributes:[]}
     ],relations:[{sourceClassName:'Alumno',targetClassName:'Materia',type:'association',label:'cursa',sourceMultiplicity:'1..*',targetMultiplicity:'1..*'}]});
     component.generateImageResult(); fixture.detectChanges();
     const relation=component.relations()[0], linked=component.classes().find(item=>item.id===relation.associationClassId);
-    expect(linked?.stereotype).toBe('Clase de asociación');
-    expect(fixture.nativeElement.querySelector('line.association-class-connector')).toBeTruthy();
+    expect(component.classes()).toHaveLength(2);
+    expect(linked).toBeUndefined();
+    expect(fixture.nativeElement.querySelector('line.association-class-connector')).toBeFalsy();
   });
 
   it('vincula Detalle y conserva sus atributos al importar una foto de Venta y Producto', () => {
@@ -363,7 +364,7 @@ describe('UmlClassDiagramComponent', () => {
       {name:'Venta',attributes:[{name:'id',type:'',isPrimaryKey:false}]},
       {name:'Producto',attributes:[{name:'nombre',type:'',isPrimaryKey:false}]},
       {name:'Detalle',attributes:[{name:'cantidad',type:'',isPrimaryKey:false},{name:'PrecioUnit',type:'',isPrimaryKey:false}]}
-    ],relations:[{sourceClassName:'Venta',targetClassName:'Producto',type:'association',label:'',sourceMultiplicity:'*',targetMultiplicity:'1..*'}]});
+    ],relations:[{sourceClassName:'Venta',targetClassName:'Producto',type:'association',label:'',sourceMultiplicity:'*',targetMultiplicity:'1..*',associationClassName:'Detalle'}]});
     component.generateImageResult(); fixture.detectChanges();
     expect(component.classes()).toHaveLength(3);
     const relation=component.relations()[0], detail=component.classes().find(item=>item.id===relation.associationClassId);
@@ -372,6 +373,39 @@ describe('UmlClassDiagramComponent', () => {
     expect(fixture.nativeElement.querySelector('line.association-class-connector')).toBeTruthy();
     const stored=JSON.parse(localStorage.getItem('uml-projects-v1')!)[0].model;
     expect(stored.classes.find((item:any)=>item.id===relation.associationClassId).attributes).toHaveLength(2);
+  });
+
+  for (const associationName of ['Inscripcion', 'LineaCompra', 'Participación']) {
+    it(`conserva clase de asociación explícita ${associationName}, su posición y sus vínculos propios`, () => {
+      component.imageAnalysis.set({status:'READY',provider:'GROQ',model:'test',message:'ok',warnings:[],classes:[
+        {name:'Origen',attributes:[],x:.4,y:.7},{name:'Destino',attributes:[],x:.8,y:.7},
+        {name:associationName,attributes:[{name:'cantidad',type:'',isPrimaryKey:false}],x:.05,y:.1},
+        {name:'Auditoria',attributes:[],x:.8,y:.1}
+      ],relations:[
+        {sourceClassName:'Origen',targetClassName:'Destino',type:'association',label:'',sourceMultiplicity:'1',targetMultiplicity:'0..*',associationClassName:associationName},
+        {sourceClassName:associationName,targetClassName:'Auditoria',type:'association',label:'registra',sourceMultiplicity:'*',targetMultiplicity:'1'}
+      ]});
+      component.generateImageResult();fixture.detectChanges();
+      const source=component.classes().find(c=>c.name==='Origen')!,detail=component.classes().find(c=>c.name===associationName)!;
+      expect(component.classes()).toHaveLength(4);expect(component.relations()).toHaveLength(2);
+      expect(component.relations()[0]).toEqual(expect.objectContaining({associationClassId:detail.id,sourceMultiplicity:'1',targetMultiplicity:'0..*'}));
+      expect(detail.x).toBeLessThan(source.x);expect(detail.y).toBeLessThan(source.y);
+      expect(detail.attributes[0].name).toBe('cantidad');
+      expect(fixture.nativeElement.querySelectorAll('line.association-class-connector')).toHaveLength(1);
+    });
+  }
+
+  it('mantiene etiquetas ausentes vacías y conserva relaciones distintas entre las mismas clases', () => {
+    component.imageAnalysis.set({status:'READY',provider:'GROQ',model:'test',message:'ok',warnings:[],classes:[{name:'Origen',attributes:[]},{name:'Destino',attributes:[]}],relations:[
+      {sourceClassName:'Origen',targetClassName:'Destino',type:'association',label:'crea',sourceMultiplicity:'',targetMultiplicity:''},
+      {sourceClassName:'Origen',targetClassName:'Destino',type:'association',label:'revisa',sourceMultiplicity:'1',targetMultiplicity:'*'},
+      {sourceClassName:'Origen',targetClassName:'Destino',type:'association',label:'revisa',sourceMultiplicity:'1',targetMultiplicity:'*'}
+    ]});
+    component.generateImageResult();fixture.detectChanges();
+    expect(component.relations()).toHaveLength(2);expect(component.relations()[0].sourceMultiplicity).toBe('');expect(component.relations()[0].targetMultiplicity).toBe('');
+    const stored=JSON.parse(localStorage.getItem('uml-projects-v1')!)[0].model;
+    expect((component as any).normalizeModel(stored).relations[0].sourceMultiplicity).toBe('');
+    expect(fixture.nativeElement.querySelectorAll('line.relation-line')).toHaveLength(2);
   });
 
   it('normaliza atributos almacenados legacy sin inferir PK por el nombre', () => {
