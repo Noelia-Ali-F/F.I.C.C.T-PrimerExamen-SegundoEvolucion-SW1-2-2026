@@ -117,12 +117,17 @@ public class UmlAiProviderPipeline {
         int budget=Math.max(64,Math.min(4096,maxTokens));
         try{return groq(prompt,schema,imageUrl,groqImageModel,budget);}
         catch(UpstreamFailure error){
-            if(error.status==429&&error.retryAfterMillis>0&&error.retryAfterMillis<=10_000){
+            if(canRetryReviewQuota(error.status,error.quota,error.retryAfterMillis)){
+                log.info("UML vision review waiting: quota={} retryAfterMs={}",error.quota,error.retryAfterMillis);
                 Thread.sleep(error.retryAfterMillis+100);
                 try{return groq(prompt,schema,imageUrl,groqImageModel,budget);}
                 catch(UpstreamFailure retryError){throw new OpenAiUmlInterpreter.ProviderException(retryError.status);}
             }throw new OpenAiUmlInterpreter.ProviderException(error.status);
         }
+    }
+
+    static boolean canRetryReviewQuota(int status,String quota,long waitMillis) {
+        return status==429&&waitMillis>0&&(waitMillis<=10_000||waitMillis<=45_000&&Set.of("INPUT_TOKENS","OUTPUT_TOKENS").contains(quota));
     }
 
     private String groq(String prompt,Map<String,Object> schema,String imageUrl,String selectedModel) throws Exception {
@@ -207,6 +212,10 @@ public class UmlAiProviderPipeline {
             }
             long retryAfterMillis=0;
             try{retryAfterMillis=Math.max(0,(long)Math.ceil(Double.parseDouble(response.headers().firstValue("Retry-After").orElse("0"))*1000));}catch(NumberFormatException ignored){}
+            if(retryAfterMillis==0&&Set.of("INPUT_TOKENS","OUTPUT_TOKENS").contains(quota)) {
+                var pause=java.util.regex.Pattern.compile("try again in ([0-9]+(?:\\.[0-9]+)?)(ms|s|m)",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(response.body());
+                if(pause.find()){double amount=Double.parseDouble(pause.group(1));retryAfterMillis=(long)Math.ceil(amount*(pause.group(2).equalsIgnoreCase("ms")?1:pause.group(2).equalsIgnoreCase("s")?1000:60000));}
+            }
             throw new UpstreamFailure(response.statusCode(),cooldown,quota,retryAfterMillis);
         }
         return mapper.readTree(response.body());

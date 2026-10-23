@@ -173,4 +173,12 @@ class UmlAiProviderPipelineTest {
         assertThat(mapper.writeValueAsString(groqPayload)).doesNotContain("SCHEMA_DUPLICADO_QUE_NO_SE_ENVIA_EN_VISION").contains("image_url","Transcribe las clases");
     }
 
+    @Test void esperaBreveSoloParaCuotasDeTokensYNoParaLimitesDiarios(){
+        assertThat(UmlAiProviderPipeline.canRetryReviewQuota(429,"INPUT_TOKENS",20_000)).isTrue();
+        assertThat(UmlAiProviderPipeline.canRetryReviewQuota(429,"OUTPUT_TOKENS",45_000)).isTrue();
+        assertThat(UmlAiProviderPipeline.canRetryReviewQuota(429,"INPUT_TOKENS",45_001)).isFalse();
+        assertThat(UmlAiProviderPipeline.canRetryReviewQuota(429,"REQUESTS",20_000)).isFalse();
+        assertThat(UmlAiProviderPipeline.canRetryReviewQuota(429,"INPUT_TOKENS",0)).isFalse();
+    }
+
 }
