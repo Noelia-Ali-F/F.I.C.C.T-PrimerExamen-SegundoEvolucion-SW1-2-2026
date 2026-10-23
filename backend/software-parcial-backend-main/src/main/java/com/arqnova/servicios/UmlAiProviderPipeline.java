@@ -141,7 +141,7 @@ public class UmlAiProviderPipeline {
         if(compact){schema=tupleImageSchema();prompt+="\nFORMATO DE SALIDA OBLIGATORIO: classes contiene arrays [nombre, atributos, métodos, x, y]. Cada atributo es [nombre,tipo,esPK] y cada método [nombre,parámetros,tipoRetorno]. relations contiene arrays [origen,destino,tipo,etiqueta,multiplicidadOrigen,multiplicidadDestino,claseAsociación]. No uses objetos dentro de classes ni relations. Ejemplo: {\"status\":\"READY\",\"classes\":[[\"Ejemplo\",[[\"dato\",null,false]],[],0.1,0.2]],\"relations\":[],\"warnings\":[],\"message\":\"ok\"}. En composición el origen es la clase junto al rombo. Una clase unida con línea discontinua a la asociación se indica únicamente en la séptima posición de esa asociación, conservando el vínculo original y sus multiplicidades; no se sustituye por dos relaciones nuevas. Conserva los nombres originales en su idioma, sin traducción. JSON compacto sin sangría.";}
 
         List<Map<String,Object>> content=new ArrayList<>();
-        content.add(Map.of("type","text","text",prompt+"\nDevuelve exclusivamente un objeto JSON con este JSON Schema: "+mapper.writeValueAsString(schema)));
+        content.add(Map.of("type","text","text",prompt+(imageUrl==null?"\nDevuelve exclusivamente un objeto JSON con este JSON Schema: "+mapper.writeValueAsString(schema):"\nDevuelve JSON válido conforme al formato indicado, sin comentarios.")));
         if(imageUrl!=null)content.add(Map.of("type","image_url","image_url",Map.of("url",imageUrl)));
         Map<String,Object> payload=new LinkedHashMap<>();
         payload.put("model",selectedModel);payload.put("temperature",0);payload.put("max_completion_tokens",maxTokens);

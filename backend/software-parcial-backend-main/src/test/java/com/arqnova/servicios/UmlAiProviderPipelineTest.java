@@ -167,4 +167,10 @@ class UmlAiProviderPipelineTest {
         assertThat(keysSeen).containsExactly("test-key-1","test-key-2","test-key-3");assertThat(groqCalls.get()).isZero();
     }
 
+    @Test void visionNoRepiteElSchemaExtensoPeroMantieneElFormatoYLaImagen() throws Exception {
+        geminiStatus=503;
+        pipeline.generate("Transcribe las clases",Map.of("type","object","description","SCHEMA_DUPLICADO_QUE_NO_SE_ENVIA_EN_VISION"),"data:image/png;base64,AQID");
+        assertThat(mapper.writeValueAsString(groqPayload)).doesNotContain("SCHEMA_DUPLICADO_QUE_NO_SE_ENVIA_EN_VISION").contains("image_url","Transcribe las clases");
+    }
+
 }

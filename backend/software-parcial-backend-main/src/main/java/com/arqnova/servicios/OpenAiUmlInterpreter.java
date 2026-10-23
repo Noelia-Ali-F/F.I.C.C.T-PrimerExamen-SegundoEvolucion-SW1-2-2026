@@ -266,7 +266,7 @@ public class OpenAiUmlInterpreter {
         Map<String,Object> checked=mapper.readValue(providerPipeline.reviewImageGraph(providerResult.get(),prompt,schema,"data:"+image.getContentType()+";base64,"+Base64.getEncoder().encodeToString(image.getBytes()),Math.min(4096,256+classes.size()*96)),new TypeReference<>() {});
         if(!reconcileReviewedGraph(raw,checked)){
             raw.put("status","ERROR");raw.put("message","No se pudo confirmar la estructura de las conexiones en la foto. Usa un encuadre más cercano donde se vean líneas y multiplicidades.");
-        } else {verifyAssociationAttachments(raw,image);if("READY".equals(raw.get("status"))&&"GROQ".equals(providerResult.get().provider()))reviewFinalTitleStrokes(raw,image);}
+        } else {boolean attachmentReviewNeeded=!associationAttachmentCandidates(raw).isEmpty();verifyAssociationAttachments(raw,image);if(!attachmentReviewNeeded&&"READY".equals(raw.get("status"))&&"GROQ".equals(providerResult.get().provider()))reviewFinalTitleStrokes(raw,image);}
     }
 
     /** Inspect every possible third box around n:n, even when the first read missed a connection. */
