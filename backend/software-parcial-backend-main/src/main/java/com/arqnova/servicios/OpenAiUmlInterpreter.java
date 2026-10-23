@@ -448,7 +448,7 @@ public class OpenAiUmlInterpreter {
         String a=normalize(original).replaceAll("[\\s_-]",""),b=normalize(candidate).replaceAll("[\\s_-]","");
         if(a.equals(b))return true;
         if(Math.min(a.length(),b.length())<4)return false;
-        int limit=Math.min(2,Math.max(a.length(),b.length())/6);
+        int limit=Math.min(2,Math.max(1,Math.max(a.length(),b.length())/6));
         if(Math.abs(a.length()-b.length())>limit)return false;
         int[] previous=new int[b.length()+1];for(int j=0;j<previous.length;j++)previous[j]=j;
         for(int i=1;i<=a.length();i++){

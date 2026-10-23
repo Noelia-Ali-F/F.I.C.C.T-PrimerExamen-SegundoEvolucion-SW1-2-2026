@@ -64,4 +64,16 @@ class UmlReviewedImageGraphTest {
   }
  }
 
+ @Test void admiteCorregirUnaLetraEnUnTituloCortoSinCambiarSuIdentidad(){
+  for(var names:List.of(List.of("Vente","Venta"),List.of("Cursa","Curso"),List.of("Ordex","Order"))){
+   var raw=triangle(names.get(0),"Destino","Inscripcion");
+   assertThat(interpreter.reconcileReviewedGraph(raw,Map.of("status","READY","relations",List.of(List.of(names.get(1),"Destino","association","","*","1..*","Inscripcion"))))).isTrue();
+   assertThat((Map<String,Object>)((List<?>)raw.get("classes")).get(0)).containsEntry("name",names.get(1));
+  }
+ }
+ @Test void unaLetraNoBastaParaElegirEntreDosClasesDeNombresParecidos(){
+  var raw=triangle("Vente","Vento","Destino");var before=new LinkedHashMap<>(raw);
+  assertThat(interpreter.reconcileReviewedGraph(raw,Map.of("status","READY","relations",List.of(List.of("Venta","Destino","association","","*","1..*",""))))).isFalse();assertThat(raw).isEqualTo(before);
+ }
+
 }
