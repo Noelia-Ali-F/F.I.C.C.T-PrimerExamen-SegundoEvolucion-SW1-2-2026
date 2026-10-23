@@ -76,10 +76,14 @@ public class UmlAiProviderPipeline {
     }
 
     private String gemini(String prompt,Map<String,Object> schema,String imageUrl,String key) throws Exception {
+        return gemini(prompt,schema,imageUrl,key,8192);
+    }
+
+    private String gemini(String prompt,Map<String,Object> schema,String imageUrl,String key,int maxTokens) throws Exception {
         List<Map<String,Object>> parts=new ArrayList<>();parts.add(Map.of("text",prompt));
         if(imageUrl!=null){int marker=imageUrl.indexOf(";base64,");if(marker<0)throw new IllegalArgumentException("Imagen inválida");parts.add(Map.of("inlineData",Map.of("mimeType",imageUrl.substring(5,marker),"data",imageUrl.substring(marker+8))));}
         Map<String,Object> generation=new LinkedHashMap<>();
-        if(!geminiModel.startsWith("gemini-3"))generation.put("temperature",0);generation.put("maxOutputTokens",8192);
+        if(!geminiModel.startsWith("gemini-3"))generation.put("temperature",0);generation.put("maxOutputTokens",maxTokens);
         generation.put("responseMimeType","application/json");generation.put("responseJsonSchema",schema);
         if(geminiModel.startsWith("gemini-2.5-flash"))generation.put("thinkingConfig",Map.of("thinkingBudget",0));
         else if(geminiModel.startsWith("gemini-3"))generation.put("thinkingConfig",Map.of("thinkingLevel","low"));
@@ -91,8 +95,26 @@ public class UmlAiProviderPipeline {
         return jsonObject(text.toString());
     }
 
+    /** Apply the same graph review to Gemini and Groq; never accept an unreviewed fallback. */
+    public String reviewImageGraph(Result initial,String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
+        if(initial==null||!"GEMINI".equals(initial.provider()))return reviewImageGraph(prompt,schema,imageUrl,maxTokens);
+        List<String> keys=geminiKeys();
+        int budget=Math.max(2048,Math.min(4096,maxTokens));
+        for(int i=0;i<keys.size();i++) {
+            if(System.currentTimeMillis()<geminiKeysUnavailableUntil.getOrDefault(i,0L))continue;
+            try { return gemini(prompt,schema,imageUrl,keys.get(i),budget); }
+            catch(InterruptedException error){Thread.currentThread().interrupt();throw error;}
+            catch(UpstreamFailure error){
+                log.warn("UML graph review failed: provider=GEMINI credential={} status={}",i+1,error.status);
+                geminiKeysUnavailableUntil.put(i,System.currentTimeMillis()+error.cooldownMillis);
+            } catch(java.io.IOException error){geminiKeysUnavailableUntil.put(i,System.currentTimeMillis()+30_000);}
+        }
+        if(groqKey.isBlank()||System.currentTimeMillis()<groqUnavailableUntil.get())throw new OpenAiUmlInterpreter.ProviderException(503);
+        return reviewImageGraph(prompt,schema,imageUrl,maxTokens);
+    }
+
     public String reviewImageGraph(String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
-        int budget=Math.max(64,Math.min(512,maxTokens));
+        int budget=Math.max(64,Math.min(4096,maxTokens));
         try{return groq(prompt,schema,imageUrl,groqImageModel,budget);}
         catch(UpstreamFailure error){
             if(error.status==429&&error.retryAfterMillis>0&&error.retryAfterMillis<=10_000){

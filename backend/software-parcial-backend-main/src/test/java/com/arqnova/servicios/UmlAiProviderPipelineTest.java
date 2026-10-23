@@ -17,7 +17,7 @@ class UmlAiProviderPipelineTest {
     private final AtomicInteger geminiCalls=new AtomicInteger(),groqCalls=new AtomicInteger();
     private int geminiStatus=200,groqStatus=200,rejectedKeys=0;
     private String geminiJson="{\"ok\":true}",groqJson="{\"ok\":true}";
-    private String groqReviewJson;
+    private String groqReviewJson,geminiReviewJson;
     private Map<?,?> geminiPayload,groqPayload;
     private int reviewQuotaAttempts;
     private String reviewRetryAfter="0.001";
@@ -37,7 +37,7 @@ class UmlAiProviderPipelineTest {
             if(!isGemini && rejectLargeOutput && ((Number)payload.get("max_completion_tokens")).intValue()>768)status=429;
             if(!isGemini&&call<=reviewQuotaAttempts){status=429;exchange.getResponseHeaders().add("Retry-After",reviewRetryAfter);}
             String body=status==200?mapper.writeValueAsString(isGemini?
-                Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text",geminiJson)))))):
+                Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text",geminiReviewJson!=null&&((Number)((Map<?,?>)payload.get("generationConfig")).get("maxOutputTokens")).intValue()<8192?geminiReviewJson:geminiJson)))))):
                 Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",groqReviewJson!=null&&((Number)payload.get("max_completion_tokens")).intValue()<=512?groqReviewJson:groqJson))))):mapper.writeValueAsString(Map.of("error",Map.of("message",isGemini?"unavailable":groqError)));
             byte[] bytes=body.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(status,bytes.length);exchange.getResponseBody().write(bytes);exchange.close();
         });server.start();
@@ -137,6 +137,34 @@ class UmlAiProviderPipelineTest {
         groqReviewJson="{\"status\":\"UNCLEAR\",\"relations\":[]}";
         var interpreter=new OpenAiUmlInterpreter(mapper);ReflectionTestUtils.setField(interpreter,"providerPipeline",pipeline);
         assertThat(interpreter.analyzeImage(new MockMultipartFile("image","foto.png","image/png",new byte[]{1,2,3}))).containsEntry("status","ERROR");
+    }
+
+    @Test void geminiRevisaClaseDeAsociacionEnLugarDeAceptarDosAsociacionesInventadas() throws Exception {
+        geminiJson="""
+          {"status":"READY","message":"ok","warnings":[],"classes":[{"name":"Curso","attributes":[],"methods":[],"x":0.1,"y":0.1},{"name":"Alumno","attributes":[],"methods":[],"x":0.8,"y":0.1},{"name":"Inscripcion","attributes":[{"name":"nota","type":null,"isPrimaryKey":false}],"methods":[],"x":0.5,"y":0.6}],"relations":[{"sourceClassName":"Curso","targetClassName":"Alumno","type":"association","label":"","sourceMultiplicity":"*","targetMultiplicity":"1..*","associationClassName":""},{"sourceClassName":"Curso","targetClassName":"Inscripcion","type":"association","label":"","sourceMultiplicity":"1","targetMultiplicity":"*","associationClassName":""},{"sourceClassName":"Alumno","targetClassName":"Inscripcion","type":"association","label":"","sourceMultiplicity":"1","targetMultiplicity":"*","associationClassName":""}]}
+          """;
+        geminiReviewJson="""
+          {"status":"READY","relations":[["Curso","Alumno","association","","*","1..*","Inscripcion"]]}
+          """;
+        var interpreter=new OpenAiUmlInterpreter(mapper);ReflectionTestUtils.setField(interpreter,"providerPipeline",pipeline);
+        var result=interpreter.analyzeImage(new MockMultipartFile("image","foto.png","image/png",new byte[]{1,2,3}));
+        assertThat(result).containsEntry("status","READY").containsEntry("provider","GEMINI");
+        assertThat(geminiCalls.get()).isEqualTo(2);assertThat(groqCalls.get()).isZero();
+        assertThat((List<?>)result.get("classes")).hasSize(3);
+        assertThat((List<?>)result.get("relations")).hasSize(1);
+        assertThat((Map<String,Object>)((List<?>)result.get("relations")).get(0)).containsEntry("associationClassName","Inscripcion").containsEntry("sourceMultiplicity","*").containsEntry("targetMultiplicity","1..*");
+    }
+    @Test void geminiConConexionesIlegiblesNoDevuelveUnGrafoListo() throws Exception {
+        geminiJson="{\"status\":\"READY\",\"message\":\"ok\",\"warnings\":[],\"classes\":[{\"name\":\"Entidad\",\"attributes\":[],\"methods\":[],\"x\":0.1,\"y\":0.1}],\"relations\":[]}";
+        geminiReviewJson="{\"status\":\"UNCLEAR\",\"relations\":[]}";
+        var interpreter=new OpenAiUmlInterpreter(mapper);ReflectionTestUtils.setField(interpreter,"providerPipeline",pipeline);
+        assertThat(interpreter.analyzeImage(new MockMultipartFile("image","foto.png","image/png",new byte[]{1,2,3}))).containsEntry("status","ERROR");
+        assertThat(geminiCalls.get()).isEqualTo(2);assertThat(groqCalls.get()).isZero();
+    }
+    @Test void revisionGeminiRotaClavesSinDependerDeLaCuotaGroq() throws Exception {
+        quotaKeys=2;
+        assertThat(pipeline.reviewImageGraph(new UmlAiProviderPipeline.Result("{}","GEMINI","test",false),"Revisa",Map.of("type","object"),"data:image/png;base64,AQID",1024)).contains("ok");
+        assertThat(keysSeen).containsExactly("test-key-1","test-key-2","test-key-3");assertThat(groqCalls.get()).isZero();
     }
 
 }

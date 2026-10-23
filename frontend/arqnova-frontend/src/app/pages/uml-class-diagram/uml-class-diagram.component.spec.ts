@@ -590,6 +590,19 @@ describe('UmlClassDiagramComponent', () => {
     expect(fixture.nativeElement.querySelector('line.relation-line').getAttribute('marker-start')).toBe('url(#diamond-composition)');
   });
 
+  it('reemplaza explícitamente un resultado anterior sin conservar las asociaciones incorrectas',()=>{
+    component.newClassName='Anterior';component.addClass();
+    const old=component.classes()[0];
+    component.model.update(model=>({...model,relations:[{id:'old',sourceId:old.id,targetId:old.id,type:'association',label:'vieja',sourceMultiplicity:'1',targetMultiplicity:'*'}]}));
+    component.imageAnalysis.set({status:'READY',provider:'GEMINI',model:'test',message:'ok',warnings:[],classes:[{name:'Curso',attributes:[]},{name:'Alumno',attributes:[]},{name:'Inscripcion',attributes:[]}],relations:[{sourceClassName:'Curso',targetClassName:'Alumno',type:'association',label:'',sourceMultiplicity:'*',targetMultiplicity:'1..*',associationClassName:'Inscripcion'}]});
+    component.generateImageResult(true);fixture.detectChanges();
+    expect(component.classes().map(c=>c.name)).toEqual(['Curso','Alumno','Inscripcion']);
+    expect(component.relations()).toHaveLength(1);
+    expect(component.associationClassFor(component.relations()[0])?.name).toBe('Inscripcion');
+    expect(fixture.nativeElement.querySelector('.association-class-connector')).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem('uml-projects-v1')!)[0].model.relations).toHaveLength(1);
+  });
+
   it('inserta el reconocimiento de imagen como UML editable y lo persiste sin sobrescribir', () => {
     component.newClassName = 'Usuario'; component.addClass();
     component.imageModalOpen.set(true);

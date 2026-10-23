@@ -110,7 +110,7 @@ public class OpenAiUmlInterpreter {
                     || !(raw.get("warnings") instanceof List<?>) || !(raw.get("message") instanceof String))
                 throw new IllegalArgumentException("Respuesta visual incompatible con el schema.");
             var initialProvider=providerResult.get();
-            if(initialProvider!=null && "GROQ".equals(initialProvider.provider())) {
+            if(initialProvider!=null && "READY".equals(raw.get("status"))) {
                 verifyImageDetails(raw,image);
             }
             Map<String,Object> result=new LinkedHashMap<>(validateImage(raw));
@@ -263,10 +263,58 @@ public class OpenAiUmlInterpreter {
                 +"Una caja unida por línea discontinua al CENTRO de otra asociación es su clase de asociación: escribe su nombre en el último campo, conservando el vínculo original; NO crees asociaciones binarias entre esa caja y los extremos. Esa línea al centro no es otra asociación. "
                 +"Orden de extremos: en association primero izquierda/superior, segundo derecha/inferior; en composition/aggregation primero la caja junto al rombo cerrado relleno/hueco; en inheritance primero hijo y segundo padre junto al triángulo; en dependency primero origen y segundo destino de la flecha discontinua. Lee cada multiplicidad junto a SU caja, no al otro extremo. "
                 +"JSON compacto: status READY si se distinguen las conexiones o UNCLEAR si no; relations son arrays [nombrePrimeraCaja,nombreSegundaCaja,tipo,etiqueta,multiplicidadPegadaAPrimeraCaja,multiplicidadPegadaASegundaCaja,nombreClaseAsociaciónOvacío]. Incluye TODAS las conexiones directas. Si una multiplicidad no está escrita usa cadena vacía. No inventes clases ni texto ilegible.";
-        Map<String,Object> checked=mapper.readValue(providerPipeline.reviewImageGraph(prompt,schema,"data:"+image.getContentType()+";base64,"+Base64.getEncoder().encodeToString(image.getBytes()),512),new TypeReference<>() {});
+        Map<String,Object> checked=mapper.readValue(providerPipeline.reviewImageGraph(providerResult.get(),prompt,schema,"data:"+image.getContentType()+";base64,"+Base64.getEncoder().encodeToString(image.getBytes()),Math.min(4096,256+classes.size()*96)),new TypeReference<>() {});
         if(!reconcileReviewedGraph(raw,checked)){
             raw.put("status","ERROR");raw.put("message","No se pudo confirmar la estructura de las conexiones en la foto. Usa un encuadre más cercano donde se vean líneas y multiplicidades.");
-        } else {reviewFinalTitleStrokes(raw,image);}
+        } else {verifyAssociationAttachments(raw,image);if("READY".equals(raw.get("status"))&&"GROQ".equals(providerResult.get().provider()))reviewFinalTitleStrokes(raw,image);}
+    }
+
+    /** Triangles around n:n are ambiguous: ask about the visible attachment, never infer from a class name. */
+    @SuppressWarnings("unchecked")
+    private void verifyAssociationAttachments(Map<String,Object> raw,MultipartFile image) throws Exception {
+        List<Map<String,Object>> candidates=associationAttachmentCandidates(raw);
+        if(candidates.isEmpty())return;
+        Map<String,Object> bool=Map.of("type","boolean");
+        Map<String,Object> row=Map.of("type","array","prefixItems",List.of(Map.of("type","integer"),Map.of("type","string","enum",List.of("CENTER_DASHED","BINARY_LINES","UNCLEAR")),bool,bool),"minItems",4,"maxItems",4);
+        Map<String,Object> schema=Map.of("type","object","properties",Map.of("attachments",Map.of("type","array","items",row)),"required",List.of("attachments"));
+        String prompt="Inspección VISUAL de trazos UML, no diseño de base de datos. La lectura anterior puede HABER INVENTADO dos líneas diagonales. Para cada candidato A--B y caja C, mira la FOTO: ¿de C sale una línea DISCONTINUA que termina en el CENTRO de A--B, sin tocar las cajas A/B? Entonces CENTER_DASHED (clase de asociación). No conviertas eso en dos asociaciones. Si de C salen realmente líneas hasta las cajas A/B usa BINARY_LINES. Si no lo distingues usa UNCLEAR. Además indica por separado si realmente existe una línea dibujada C--A y C--B, sin contar el camino que pasa por el centro de A--B. Los nombres solo identifican cajas; no deduzcas nada por sus atributos. Devuelve attachments=[[indice,veredicto,hayLineaDirectaCA,hayLineaDirectaCB]], una fila por candidato. Candidatos: "+mapper.writeValueAsString(candidates);
+        var checked=mapper.readValue(providerPipeline.reviewImageGraph(providerResult.get(),prompt,schema,"data:"+image.getContentType()+";base64,"+Base64.getEncoder().encodeToString(image.getBytes()),Math.min(2048,128+candidates.size()*48)),new TypeReference<Map<String,Object>>() {});
+        if(!applyAssociationAttachments(raw,candidates,checked)){raw.put("status","ERROR");raw.put("message","No se pudo distinguir la unión discontinua de la clase de asociación. Acerca la foto a esa unión y vuelve a analizar.");}
+    }
+
+    @SuppressWarnings("unchecked")
+    List<Map<String,Object>> associationAttachmentCandidates(Map<String,Object> raw) {
+        List<Map<String,Object>> candidates=new ArrayList<>();
+        if(!(raw.get("relations") instanceof List<?> rows)||!(raw.get("classes") instanceof List<?> classes))return candidates;
+        for(Object value:rows)if(value instanceof Map<?,?> edge&&"association".equals(edge.get("type"))&&text(edge.get("sourceMultiplicity")).endsWith("*")&&text(edge.get("targetMultiplicity")).endsWith("*")&&text(edge.get("associationClassName")).isBlank()) {
+            String a=text(edge.get("sourceClassName")),b=text(edge.get("targetClassName"));
+            for(Object c:classes)if(c instanceof Map<?,?> clazz){String name=text(clazz.get("name"));if(name.equals(a)||name.equals(b))continue;
+                boolean toA=rows.stream().anyMatch(r->r instanceof Map<?,?> e&&isAssociationBetween(e,name,a));
+                boolean toB=rows.stream().anyMatch(r->r instanceof Map<?,?> e&&isAssociationBetween(e,name,b));
+                if(toA&&toB&&candidates.size()<16)candidates.add(Map.of("index",candidates.size(),"A",a,"B",b,"C",name));
+            }
+        }
+        return candidates;
+    }
+
+    private boolean isAssociationBetween(Map<?,?> edge,String a,String b){return "association".equals(edge.get("type"))&&((a.equals(edge.get("sourceClassName"))&&b.equals(edge.get("targetClassName")))||(b.equals(edge.get("sourceClassName"))&&a.equals(edge.get("targetClassName"))));}
+
+    @SuppressWarnings("unchecked")
+    boolean applyAssociationAttachments(Map<String,Object> raw,List<Map<String,Object>> candidates,Map<String,Object> checked) {
+        if(!(checked.get("attachments") instanceof List<?> rows)||rows.size()!=candidates.size())return false;
+        var updated=new ArrayList<Map<String,Object>>();for(Object e:(List<?>)raw.get("relations"))updated.add(new LinkedHashMap<>((Map<String,Object>)e));
+        Set<Integer> seen=new java.util.HashSet<>();
+        for(Object value:rows){if(!(value instanceof List<?> fields)||fields.size()!=4||!(fields.get(0) instanceof Number n)||!(fields.get(2) instanceof Boolean ca)||!(fields.get(3) instanceof Boolean cb))return false;
+            int index=n.intValue();if(index<0||index>=candidates.size()||n.doubleValue()!=index||!seen.add(index))return false;
+            String verdict=text(fields.get(1));if(!Set.of("CENTER_DASHED","BINARY_LINES").contains(verdict))return false;
+            if("BINARY_LINES".equals(verdict))continue;
+            var candidate=candidates.get(index);String a=text(candidate.get("A")),b=text(candidate.get("B")),c=text(candidate.get("C"));
+            var matches=updated.stream().filter(e->isAssociationBetween(e,a,b)).toList();if(matches.size()!=1)return false;
+            if(!text(matches.get(0).get("associationClassName")).isBlank()&&!c.equals(matches.get(0).get("associationClassName")))return false;
+            matches.get(0).put("associationClassName",c);
+            updated.removeIf(e->(!ca&&isAssociationBetween(e,c,a))||(!cb&&isAssociationBetween(e,c,b)));
+        }
+        raw.put("relations",updated);return true;
     }
 
     @SuppressWarnings("unchecked")

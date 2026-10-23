@@ -31,4 +31,28 @@ class UmlReviewedImageGraphTest {
   assertThat(((Map<?,?>)((List<?>)raw.get("relations")).get(0)).get("targetMultiplicity")).isEqualTo("");
  }
 
+ private Map<String,Object> triangle(String a,String b,String c){
+  return new LinkedHashMap<>(Map.of("classes",List.of(Map.of("name",a),Map.of("name",b),Map.of("name",c)),"relations",List.of(Map.of("sourceClassName",a,"targetClassName",b,"type","association","sourceMultiplicity","*","targetMultiplicity","1..*"),Map.of("sourceClassName",a,"targetClassName",c,"type","association"),Map.of("sourceClassName",c,"targetClassName",b,"type","association"))));
+ }
+ @Test void confirmaUnionAlCentroConNombresArbitrariosYEliminaSoloLineasNoDibujadas(){
+  for(String name:List.of("Participacion","Enrollment","LineaPedido")){
+   var raw=triangle("Primera","Segunda",name);var candidates=interpreter.associationAttachmentCandidates(raw);assertThat(candidates).hasSize(1);
+   assertThat(interpreter.applyAssociationAttachments(raw,candidates,Map.of("attachments",List.of(List.of(0,"CENTER_DASHED",false,false))))).isTrue();
+   var edges=(List<Map<String,Object>>)raw.get("relations");assertThat(edges).hasSize(1);assertThat(edges.get(0)).containsEntry("associationClassName",name).containsEntry("sourceMultiplicity","*").containsEntry("targetMultiplicity","1..*");
+  }
+ }
+ @Test void noConvierteUnTrianguloRealEnClaseDeAsociacion(){
+  var raw=triangle("A","B","C");var before=new LinkedHashMap<>(raw);
+  assertThat(interpreter.applyAssociationAttachments(raw,interpreter.associationAttachmentCandidates(raw),Map.of("attachments",List.of(List.of(0,"BINARY_LINES",true,true))))).isTrue();assertThat(raw).isEqualTo(before);
+ }
+ @Test void preservaUnaRelacionPropiaDeLaClaseDeAsociacionSiEstaDibujada(){
+  var raw=triangle("A","B","C");assertThat(interpreter.applyAssociationAttachments(raw,interpreter.associationAttachmentCandidates(raw),Map.of("attachments",List.of(List.of(0,"CENTER_DASHED",true,false))))).isTrue();
+  var edges=(List<Map<String,Object>>)raw.get("relations");assertThat(edges).hasSize(2);assertThat(edges.get(1)).containsEntry("sourceClassName","A").containsEntry("targetClassName","C");
+ }
+ @Test void unaUnionIlegibleOReferenciasInvalidasNoModificanElGrafo(){
+  for(var row:List.of(List.of(0,"UNCLEAR",false,false),List.of(10,"CENTER_DASHED",false,false))){
+   var raw=triangle("A","B","C");var before=new LinkedHashMap<>(raw);assertThat(interpreter.applyAssociationAttachments(raw,interpreter.associationAttachmentCandidates(raw),Map.of("attachments",List.of(row)))).isFalse();assertThat(raw).isEqualTo(before);
+  }
+ }
+
 }
