@@ -1,0 +1,57 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "ArqNova DynamoDB table and least-privilege EC2 instance profile",
+  "Parameters": {
+    "TableName": {"Type": "String", "Default": "arqnova", "AllowedPattern": "[a-zA-Z0-9_.-]{3,255}"}
+  },
+  "Resources": {
+    "Database": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": {"Ref": "TableName"},
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {"AttributeName": "pk", "AttributeType": "S"},
+          {"AttributeName": "sk", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "pk", "KeyType": "HASH"},
+          {"AttributeName": "sk", "KeyType": "RANGE"}
+        ],
+        "Tags": [{"Key": "Application", "Value": "ArqNova"}]
+      }
+    },
+    "BackendRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "ec2.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [{
+          "PolicyName": "ArqNovaTableAccess",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Action": ["dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:Query", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:UpdateItem", "dynamodb:ConditionCheckItem"],
+              "Resource": {"Fn::GetAtt": ["Database", "Arn"]}
+            }]
+          }
+        }]
+      }
+    },
+    "BackendProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {"Roles": [{"Ref": "BackendRole"}]}
+    }
+  },
+  "Outputs": {
+    "RoleName": {"Value": {"Ref": "BackendRole"}},
+    "Table": {"Value": {"Ref": "Database"}},
+    "InstanceProfileName": {"Value": {"Ref": "BackendProfile"}},
+    "InstanceProfileArn": {"Value": {"Fn::GetAtt": ["BackendProfile", "Arn"]}}
+  }
+}

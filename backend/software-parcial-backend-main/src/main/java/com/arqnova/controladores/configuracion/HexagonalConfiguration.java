@@ -22,12 +22,23 @@ public class HexagonalConfiguration {
  @Bean com.arqnova.servicios.puertos.entrada.UmlImageAnalysisUseCase umlImageAnalysis(UmlInterpretationPort ai){return new UmlImageAnalysisService(ai);}
  @Bean UmlBackendGeneratorService umlBackendGeneratorService(BackendGenerationPort output){return new UmlBackendGeneratorServiceImpl(output);}
  @Bean UmlFlutterGeneratorService umlFlutterGeneratorService(FlutterGenerationPort output){return new UmlFlutterGeneratorServiceImpl(output);}
- @Bean UmlCollaborationService umlCollaborationService(GraphDataPort graph,CollaborationSessionStore sessions,UmlProjectPersistenceService projects,UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions){
+ @Bean UmlCollaborationService umlCollaborationService(GraphDataPort graph,CollaborationSessionStore sessions,UmlProjectPersistenceService projects,UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions,Environment environment){
   Properties policies=new Properties();
   policies.setProperty("apply","PROPAGATION_REQUIRED");
   policies.setProperty("recordActivity","PROPAGATION_REQUIRED");
   policies.setProperty("activities","PROPAGATION_REQUIRED,readOnly");
-  return transactional(new UmlCollaborationService(graph,sessions,projects,diagrams,activities),transactions,policies);
+  UmlCollaborationService service=transactional(new UmlCollaborationService(graph,sessions,projects,diagrams,activities),transactions,policies);
+  if(!environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dynamodb")))return service;
+  // Keep the existing in-process collaboration serialization through the commit itself.
+  // Otherwise the next WebSocket event can read an old revision after apply returns but before commit.
+  var serialized=new org.springframework.aop.framework.ProxyFactory(service);
+  serialized.setProxyTargetClass(true);
+  Object guard=new Object();
+  serialized.addAdvice((org.aopalliance.intercept.MethodInterceptor) invocation->{
+   if("apply".equals(invocation.getMethod().getName()))synchronized(guard){return invocation.proceed();}
+   return invocation.proceed();
+  });
+  return (UmlCollaborationService)serialized.getProxy();
  }
  @Bean UmlProjectPersistenceService umlProjectPersistenceService(ProjectDataPort projects,ProjectMemberDataPort members,UmlDiagramDataPort diagrams,UserDataPort users,PlatformTransactionManager transactions){
   Properties policies=new Properties();

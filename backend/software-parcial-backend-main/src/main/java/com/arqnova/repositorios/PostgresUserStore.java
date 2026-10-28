@@ -1,4 +1,5 @@
 package com.arqnova.repositorios;
+import org.springframework.context.annotation.Profile;
 import com.arqnova.servicios.puertos.salida.UserStore;
 
 import com.arqnova.modelo.enums.RolUsuario;
@@ -9,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import java.util.*;
 
+@Profile("!dynamodb")
 @Component @RequiredArgsConstructor
 public class PostgresUserStore implements UserStore {
     private final UserJpaRepository repository;

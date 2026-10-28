@@ -1,4 +1,5 @@
 package com.arqnova.repositorios;
+import org.springframework.context.annotation.Profile;
 
 import com.arqnova.modelo.Departamento;
 import com.arqnova.repositorios.jpa.entidades.DepartmentEntity;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+@Profile("!dynamodb")
 @Repository @RequiredArgsConstructor
 public class DepartamentoRepository implements com.arqnova.servicios.puertos.salida.DepartamentoStore {
     private final DepartmentJpaRepository repository;

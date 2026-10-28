@@ -1,0 +1,14 @@
+# Activate together with prod: SPRING_PROFILES_ACTIVE=prod,dynamodb
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+app:
+  dynamodb:
+    region: ${AWS_REGION:us-east-2}
+    table: ${DYNAMODB_TABLE:arqnova}
+    # Empty in AWS: DefaultCredentialsProvider uses the instance's IAM role.
+    endpoint: ${DYNAMODB_ENDPOINT:}

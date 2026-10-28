@@ -1,5 +1,7 @@
 # Arquitectura hexagonal de ArqNova
 
+La persistencia también dispone de adaptadores NoSQL en `repositorios/dynamodb`. El perfil `dynamodb` reemplaza JPA/PostgreSQL por el SDK de DynamoDB sin cambiar los puertos de los servicios. La activación y sus límites se documentan en [DynamoDB](dynamodb.md). Durante la transición se conserva PostgreSQL para una reversión controlada.
+
 La separación usa puertos y adaptadores conservando los contratos existentes. El backend mantiene las cuatro capas obligatorias del examen; Angular y Flutter separan dominio, aplicación, presentación y adaptadores sin cambiar sus funcionalidades.
 
 ## Backend: cuatro capas obligatorias

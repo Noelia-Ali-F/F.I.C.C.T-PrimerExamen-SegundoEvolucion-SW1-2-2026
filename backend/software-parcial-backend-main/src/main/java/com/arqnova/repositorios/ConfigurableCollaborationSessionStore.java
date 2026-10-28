@@ -1,4 +1,5 @@
 package com.arqnova.repositorios;
+import org.springframework.context.annotation.Profile;
 import com.arqnova.servicios.puertos.salida.CollaborationSessionStore;
 
 import com.arqnova.modelo.UmlCollaborationSession;
@@ -8,6 +9,7 @@ import com.arqnova.repositorios.jpa.*;
 import org.springframework.stereotype.Component;
 import java.util.*;
 
+@Profile("!dynamodb")
 @Component
 public class ConfigurableCollaborationSessionStore implements CollaborationSessionStore {
     private final UmlCollaborationSessionJpaRepository postgres;

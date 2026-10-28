@@ -4,6 +4,12 @@
 
 El proyecto continúa en el **segundo examen de Software I**. **Todo lo implementado hasta ahora corresponde al primer examen; todavía no hay funcionalidades implementadas del segundo examen.**
 
+## Migración de la base de datos a DynamoDB
+
+Se incorporó el adaptador NoSQL de **Amazon DynamoDB** conservando la arquitectura hexagonal y las cuatro capas. La activación en AWS requiere crear la tabla, asociar un rol IAM y verificar la copia de los datos. **Actualizar el código no cambia automáticamente la base de producción**, que continúa en PostgreSQL hasta completar ese paso.
+
+La configuración, la plantilla de AWS y el procedimiento de migración/reversión están en [docs/dynamodb.md](docs/dynamodb.md). La aplicación web y sus contratos REST/WebSocket se conservan.
+
 ## Contenido
 
 - [Estado de las entregas](#estado-de-las-entregas)

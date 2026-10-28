@@ -1,10 +1,12 @@
 package com.arqnova.repositorios.jpa.adaptadores;
+import org.springframework.context.annotation.Profile;
 import com.arqnova.modelo.entidades.*;
 import com.arqnova.servicios.puertos.salida.UserDataPort;
 import com.arqnova.repositorios.jpa.UserJpaRepository;
 import java.util.*;
 import org.springframework.stereotype.Repository;
 import lombok.RequiredArgsConstructor;
+@Profile("!dynamodb")
 @Repository @RequiredArgsConstructor
 public class JpaUserAdapter implements UserDataPort {
  private final UserJpaRepository repository;

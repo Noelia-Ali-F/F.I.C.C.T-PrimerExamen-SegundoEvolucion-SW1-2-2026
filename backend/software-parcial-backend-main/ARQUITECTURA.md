@@ -1,5 +1,7 @@
 # Arquitectura hexagonal dentro de las cuatro capas
 
+La persistencia también dispone de adaptadores NoSQL en `repositorios/dynamodb`. El perfil `dynamodb` reemplaza JPA/PostgreSQL por el SDK de DynamoDB sin cambiar los puertos de los servicios. La activación y sus límites se documentan en [DynamoDB](../../docs/dynamodb.md). Durante la transición se conserva PostgreSQL para una reversión controlada.
+
 ArqNova mantiene Java 17, Spring Boot y exactamente los cuatro paquetes principales exigidos por el examen: **modelo, servicios, controladores y repositorios**. La arquitectura hexagonal se aplica mediante inversión de dependencias; no se crea una quinta capa principal ni se cambia el contrato del sistema.
 
 | Capa obligatoria | Papel en la arquitectura | Dependencias |
