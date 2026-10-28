@@ -3,12 +3,12 @@ package com.arqnova.servicios;
 import com.arqnova.modelo.UmlCollaborationSession;
 import com.arqnova.modelo.dto.request.CreateUmlSessionRequest;
 import com.arqnova.modelo.dto.request.UmlCollaborationEvent;
-import com.arqnova.repositorios.CollaborationSessionStore;
+import com.arqnova.servicios.puertos.salida.CollaborationSessionStore;
 import com.arqnova.modelo.entidades.UmlDiagramEntity;
 import com.arqnova.modelo.entidades.ProjectEntity;
 import com.arqnova.modelo.entidades.UmlCollaborationActivityEntity;
-import com.arqnova.repositorios.jpa.UmlDiagramJpaRepository;
-import com.arqnova.repositorios.jpa.UmlCollaborationActivityJpaRepository;
+import com.arqnova.servicios.puertos.salida.UmlDiagramDataPort;
+import com.arqnova.servicios.puertos.salida.UmlCollaborationActivityDataPort;
 import com.arqnova.servicios.persistencia.UmlProjectPersistenceService;
 import org.junit.jupiter.api.Test;
 
@@ -31,10 +31,10 @@ class UmlCollaborationServiceTest {
     void persistsTraceableActivityButNeverPersistsCursorNoise() {
         CollaborationSessionStore store = mock(CollaborationSessionStore.class);
         UmlProjectPersistenceService projects = mock(UmlProjectPersistenceService.class);
-        UmlDiagramJpaRepository diagrams = mock(UmlDiagramJpaRepository.class);
-        UmlCollaborationActivityJpaRepository activities = mock(UmlCollaborationActivityJpaRepository.class);
+        UmlDiagramDataPort diagrams = mock(UmlDiagramDataPort.class);
+        UmlCollaborationActivityDataPort activities = mock(UmlCollaborationActivityDataPort.class);
         when(activities.existsById("event-1")).thenReturn(false);
-        UmlCollaborationService service = new UmlCollaborationService(store, projects, diagrams, activities);
+        UmlCollaborationService service = new UmlCollaborationService(new com.arqnova.repositorios.serializacion.JacksonGraphDataAdapter(), store, projects, diagrams, activities);
         UmlCollaborationEvent mutation = UmlCollaborationEvent.builder().eventId("event-1").sessionId("s1")
                 .projectId("p1").userId("ana").userName("Ana Gómez").type("class:create")
                 .elementId("c1").elementType("class").operation("creó una clase").timestamp(1000L)
@@ -53,7 +53,7 @@ class UmlCollaborationServiceTest {
     void returnsPersistedActivityOnlyAfterProjectAccessCheck() {
         CollaborationSessionStore store = mock(CollaborationSessionStore.class);
         UmlProjectPersistenceService projects = mock(UmlProjectPersistenceService.class);
-        UmlCollaborationActivityJpaRepository activities = mock(UmlCollaborationActivityJpaRepository.class);
+        UmlCollaborationActivityDataPort activities = mock(UmlCollaborationActivityDataPort.class);
         when(store.findById("s1")).thenReturn(Optional.of(UmlCollaborationSession.builder()
                 .id("s1").projectId("p1").active(true).build()));
         when(activities.findTop100BySessionIdOrderByOccurredAtDesc("s1")).thenReturn(List.of(
@@ -61,8 +61,8 @@ class UmlCollaborationServiceTest {
                         .userId("ana").userName("Ana Gómez").eventType("relation:delete")
                         .elementId("r1").elementType("relation").operation("eliminó una relación")
                         .occurredAt(java.time.LocalDateTime.of(2026, 9, 21, 10, 0)).build()));
-        UmlCollaborationService service = new UmlCollaborationService(store, projects,
-                mock(UmlDiagramJpaRepository.class), activities);
+        UmlCollaborationService service = new UmlCollaborationService(new com.arqnova.repositorios.serializacion.JacksonGraphDataAdapter(), store, projects,
+                mock(UmlDiagramDataPort.class), activities);
 
         var result = service.activities("s1", "ana");
 
@@ -75,7 +75,7 @@ class UmlCollaborationServiceTest {
     void sessionCreatorIsReturnedAsHostAndKeepsOwnerRole() {
         CollaborationSessionStore repository = mock(CollaborationSessionStore.class);
         UmlProjectPersistenceService projects = mock(UmlProjectPersistenceService.class);
-        UmlDiagramJpaRepository diagrams = mock(UmlDiagramJpaRepository.class);
+        UmlDiagramDataPort diagrams = mock(UmlDiagramDataPort.class);
         when(repository.findActiveByProjectId("p1")).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(call -> call.getArgument(0));
         when(projects.findProjectById("p1")).thenReturn(Optional.of(ProjectEntity.builder().id("p1").name("Proyecto").build()));
@@ -86,8 +86,8 @@ class UmlCollaborationServiceTest {
         request.setProjectName("Proyecto");
         request.setModel(Map.of("classes", List.of(), "relations", List.of()));
 
-        var response = new UmlCollaborationService(repository, projects, diagrams,
-                mock(UmlCollaborationActivityJpaRepository.class)).start(request, "admin");
+        var response = new UmlCollaborationService(new com.arqnova.repositorios.serializacion.JacksonGraphDataAdapter(), repository, projects, diagrams,
+                mock(UmlCollaborationActivityDataPort.class)).start(request, "admin");
 
         assertEquals("admin", response.getHostUserId());
         assertEquals("OWNER", response.getMemberRole());
@@ -229,13 +229,13 @@ class UmlCollaborationServiceTest {
     }
 
     private UmlCollaborationService service(CollaborationSessionStore store, UmlCollaborationSession session) {
-        UmlDiagramJpaRepository diagrams = mock(UmlDiagramJpaRepository.class);
+        UmlDiagramDataPort diagrams = mock(UmlDiagramDataPort.class);
         UmlDiagramEntity diagram = UmlDiagramEntity.builder().id("d1").projectId("p1").model(session.getModel()).modelVersion(1).build();
         when(diagrams.findByProjectId("p1")).thenReturn(Optional.of(diagram));
         when(diagrams.findByProjectIdForUpdate("p1")).thenReturn(Optional.of(diagram));
         when(diagrams.save(any())).thenAnswer(call -> call.getArgument(0));
-        return new UmlCollaborationService(store, mock(UmlProjectPersistenceService.class), diagrams,
-                mock(UmlCollaborationActivityJpaRepository.class));
+        return new UmlCollaborationService(new com.arqnova.repositorios.serializacion.JacksonGraphDataAdapter(), store, mock(UmlProjectPersistenceService.class), diagrams,
+                mock(UmlCollaborationActivityDataPort.class));
     }
 
     private UmlCollaborationEvent attributeEvent(String type, String classId, String attributeId, Map<String, Object> attribute) {

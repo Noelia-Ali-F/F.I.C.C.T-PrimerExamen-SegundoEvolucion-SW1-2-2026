@@ -2,7 +2,7 @@ package com.arqnova.servicios;
 
 import com.arqnova.modelo.dto.request.UmlBackendGenerationRequest.*;
 import com.arqnova.modelo.dto.request.UmlFlutterGenerationRequest;
-import com.arqnova.servicios.impl.UmlFlutterGeneratorServiceImpl;
+import com.arqnova.repositorios.generacion.UmlFlutterGeneratorAdapter;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -13,7 +13,7 @@ import java.util.zip.ZipInputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class UmlFlutterGeneratorServiceTest {
-    private final UmlFlutterGeneratorServiceImpl service = new UmlFlutterGeneratorServiceImpl();
+    private final UmlFlutterGeneratorAdapter service = new UmlFlutterGeneratorAdapter();
 
     @Test
     void generatesIndependentFlutterProjectWithModelsRestServicesAndCrudScreens() throws Exception {

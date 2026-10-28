@@ -5,16 +5,13 @@ import com.arqnova.modelo.dto.request.CreateUmlSessionRequest;
 import com.arqnova.modelo.dto.request.UmlCollaborationEvent;
 import com.arqnova.modelo.dto.response.UmlSessionResponse;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
-import com.arqnova.repositorios.CollaborationSessionStore;
+import com.arqnova.servicios.puertos.salida.CollaborationSessionStore;
 import com.arqnova.modelo.entidades.ProjectMemberRole;
-import com.arqnova.repositorios.jpa.UmlDiagramJpaRepository;
-import com.arqnova.repositorios.jpa.UmlCollaborationActivityJpaRepository;
+import com.arqnova.servicios.puertos.salida.UmlDiagramDataPort;
+import com.arqnova.servicios.puertos.salida.UmlCollaborationActivityDataPort;
 import com.arqnova.modelo.entidades.UmlCollaborationActivityEntity;
-import com.arqnova.servicios.persistencia.UmlProjectPersistenceService;
+import com.arqnova.servicios.puertos.entrada.ProjectUseCase;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -24,13 +21,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@Service
 @RequiredArgsConstructor
-public class UmlCollaborationService {
+public class UmlCollaborationService implements com.arqnova.servicios.puertos.entrada.CollaborationUseCase {
+    private final com.arqnova.servicios.puertos.salida.GraphDataPort graphData;
     private final CollaborationSessionStore store;
-    private final UmlProjectPersistenceService projects;
-    private final UmlDiagramJpaRepository diagrams;
-    private final UmlCollaborationActivityJpaRepository activities;
+    private final ProjectUseCase projects;
+    private final UmlDiagramDataPort diagrams;
+    private final UmlCollaborationActivityDataPort activities;
 
     public UmlSessionResponse start(CreateUmlSessionRequest request, String username) {
         projects.requireAccess(request.getProjectId(), username, ProjectMemberRole.OWNER);
@@ -70,7 +67,6 @@ public class UmlCollaborationService {
     }
 
     @SuppressWarnings("unchecked")
-    @Transactional
     public synchronized void apply(UmlCollaborationEvent event) {
         if (event.getType() == null || event.getType().startsWith("participant:") || event.getType().startsWith("session:")) return;
         UmlCollaborationSession session = requireSession(event.getSessionId(), event.getProjectId());
@@ -105,7 +101,6 @@ public class UmlCollaborationService {
         recordActivity(event);
     }
 
-    @Transactional
     public void recordActivity(UmlCollaborationEvent event) {
         if (!isTraceable(event) || activities.existsById(event.getEventId())) return;
         long timestamp = event.getTimestamp() == null ? System.currentTimeMillis() : event.getTimestamp();
@@ -117,7 +112,6 @@ public class UmlCollaborationService {
                 .build());
     }
 
-    @Transactional(readOnly = true)
     public List<UmlCollaborationEvent> activities(String sessionId, String username) {
         UmlCollaborationSession session = store.findById(sessionId)
                 .orElseThrow(() -> new UnauthorizedActionException("La sesión colaborativa no existe"));
@@ -238,6 +232,6 @@ public class UmlCollaborationService {
     private String randomCode() { return UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase(); }
     @SuppressWarnings("unchecked")
     private Map<String, Object> deepCopy(Map<String, Object> value) {
-        return value == null ? new LinkedHashMap<>() : new com.fasterxml.jackson.databind.ObjectMapper().convertValue(value, LinkedHashMap.class);
+        return value == null ? new LinkedHashMap<>() : graphData.copy(value);
     }
 }

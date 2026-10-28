@@ -7,7 +7,7 @@ import com.arqnova.modelo.dto.request.ActualizarEstadoUsuarioRequest;
 import com.arqnova.modelo.dto.response.ApiResponse;
 import com.arqnova.modelo.dto.response.UsuarioAdminResponse;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
-import com.arqnova.servicios.AvatarStorageService;
+import com.arqnova.servicios.puertos.entrada.AvatarQueryUseCase;
 import com.arqnova.servicios.UsuarioAdminService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,7 +35,7 @@ import java.util.Map;
 public class AdminUsuarioController {
 
     private final UsuarioAdminService usuarioAdminService;
-    private final AvatarStorageService avatarStorageService;
+    private final AvatarQueryUseCase avatarStorageService;
 
     @GetMapping
     @Operation(summary = "Listar usuarios", description = "Retorna todos los usuarios registrados. Solo ADMINISTRADOR.")
@@ -146,7 +146,7 @@ public class AdminUsuarioController {
         validarAdministrador(usuario, rolUsuario);
 
         UsuarioAdminResponse targetUser = usuarioAdminService.obtenerPorId(id);
-        UsuarioAdminResponse actualizado = usuarioAdminService.actualizarAvatar(id, archivo, usuario);
+        UsuarioAdminResponse actualizado = usuarioAdminService.actualizarAvatar(id, com.arqnova.controladores.adaptadores.MultipartFiles.read(archivo), usuario);
 
         log.info("Avatar actualizado para usuario {}", targetUser.getUsername());
         return ResponseEntity.ok(ApiResponse.ok("Avatar actualizado exitosamente", actualizado));
@@ -155,7 +155,7 @@ public class AdminUsuarioController {
     @GetMapping("/avatars/{fileName:.+}")
     @Operation(summary = "Obtener avatar", description = "Descarga un avatar almacenado por el módulo de usuarios.")
     public ResponseEntity<Resource> obtenerAvatar(@PathVariable String fileName) {
-        Resource avatar = avatarStorageService.cargarAvatar(fileName);
+        Resource avatar = new org.springframework.core.io.ByteArrayResource(avatarStorageService.cargarAvatarBytes(fileName));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(avatarStorageService.tipoContenido(fileName)))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")

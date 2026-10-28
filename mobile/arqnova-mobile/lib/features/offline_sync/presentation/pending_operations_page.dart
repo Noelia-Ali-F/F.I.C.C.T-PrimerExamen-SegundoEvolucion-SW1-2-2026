@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../data/sync_service.dart';
+import 'sync_controller.dart';
 import '../domain/pending_operation.dart';
 
 class PendingOperationsPage extends StatelessWidget {
   const PendingOperationsPage({super.key, required this.syncService});
 
-  final SyncService syncService;
+  final SyncController syncService;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +72,7 @@ class PendingOperationsPage extends StatelessWidget {
 
 class _ConnectionBanner extends StatelessWidget {
   const _ConnectionBanner({required this.service});
-  final SyncService service;
+  final SyncController service;
 
   @override
   Widget build(BuildContext context) {

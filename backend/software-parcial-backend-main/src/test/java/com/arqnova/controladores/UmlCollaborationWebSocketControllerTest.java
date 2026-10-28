@@ -3,7 +3,7 @@ package com.arqnova.controladores;
 import com.arqnova.modelo.UmlCollaborationSession;
 import com.arqnova.modelo.Usuario;
 import com.arqnova.modelo.dto.request.UmlCollaborationEvent;
-import com.arqnova.repositorios.UserStore;
+import com.arqnova.servicios.puertos.salida.UserStore;
 import com.arqnova.servicios.UmlCollaborationService;
 import com.arqnova.servicios.UmlElementLockService;
 import com.arqnova.servicios.persistencia.UmlProjectPersistenceService;

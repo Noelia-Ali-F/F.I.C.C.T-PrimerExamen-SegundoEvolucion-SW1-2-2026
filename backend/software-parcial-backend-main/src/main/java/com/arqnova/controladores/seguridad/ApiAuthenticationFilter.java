@@ -1,6 +1,6 @@
 package com.arqnova.controladores.seguridad;
 
-import com.arqnova.servicios.seguridad.AuthTokenService;
+import com.arqnova.servicios.puertos.entrada.TokenValidationUseCase;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,8 +22,8 @@ import java.security.Principal;
 @RequiredArgsConstructor
 public class ApiAuthenticationFilter extends OncePerRequestFilter {
 
-    private final AuthTokenService tokenService;
-    private final com.arqnova.servicios.UsuarioConsultaService usuarioRepository;
+    private final TokenValidationUseCase tokenService;
+    private final com.arqnova.servicios.puertos.entrada.UserQueryUseCase usuarioRepository;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -42,7 +42,7 @@ public class ApiAuthenticationFilter extends OncePerRequestFilter {
             token = authorization.substring(7);
         }
         try {
-            AuthTokenService.Claims claims = tokenService.verificar(token);
+            TokenValidationUseCase.Claims claims = tokenService.verificar(token);
             com.arqnova.modelo.Usuario usuario = usuarioRepository.findByUsername(claims.username())
                     .orElseThrow(() -> new IllegalArgumentException("Usuario inexistente"));
             if (Boolean.FALSE.equals(usuario.getHabilitado())) {
@@ -76,8 +76,8 @@ public class ApiAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private static class ClaimsRequestWrapper extends HttpServletRequestWrapper {
-        private final AuthTokenService.Claims claims;
-        ClaimsRequestWrapper(HttpServletRequest request, AuthTokenService.Claims claims) {
+        private final TokenValidationUseCase.Claims claims;
+        ClaimsRequestWrapper(HttpServletRequest request, TokenValidationUseCase.Claims claims) {
             super(request);
             this.claims = claims;
         }

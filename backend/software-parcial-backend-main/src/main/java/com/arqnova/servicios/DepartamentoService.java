@@ -7,20 +7,17 @@ import com.arqnova.modelo.dto.response.DepartamentoResponse;
 import com.arqnova.modelo.excepciones.DuplicateResourceException;
 import com.arqnova.modelo.excepciones.ResourceNotFoundException;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
-import com.arqnova.repositorios.DepartamentoRepository;
+import com.arqnova.servicios.puertos.salida.DepartamentoStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Service
 @Slf4j
 @RequiredArgsConstructor
-public class DepartamentoService {
-    private final DepartamentoRepository departamentoRepository;
+public class DepartamentoService implements com.arqnova.servicios.puertos.entrada.DepartamentoUseCase {
+    private final DepartamentoStore departamentoRepository;
 
     public List<DepartamentoResponse> listarDepartamentos(String usuario, RolUsuario rolUsuario) {
         validarContexto(usuario, rolUsuario);
@@ -62,7 +59,7 @@ public class DepartamentoService {
 
         Departamento nuevo = Departamento.builder()
                 .nombre(nombre)
-                .descripcion(StringUtils.hasText(request.getDescripcion()) ? request.getDescripcion().trim() : null)
+                .descripcion(hasText(request.getDescripcion()) ? request.getDescripcion().trim() : null)
                 .creadoPor(usuario)
                 .fechaCreacion(LocalDateTime.now())
                 .build();
@@ -125,7 +122,7 @@ public class DepartamentoService {
             existente.setNombre(nuevoNombre);
         }
 
-        existente.setDescripcion(StringUtils.hasText(request.getDescripcion()) ? request.getDescripcion().trim() : null);
+        existente.setDescripcion(hasText(request.getDescripcion()) ? request.getDescripcion().trim() : null);
 
         Departamento guardado = departamentoRepository.save(existente);
         log.info("[Departamentos] Actualizado: '{}' por {}", guardado.getNombre(), usuario);
@@ -134,7 +131,7 @@ public class DepartamentoService {
     }
 
     private void validarContexto(String usuario, RolUsuario rolUsuario) {
-        if (!StringUtils.hasText(usuario) || rolUsuario == null) {
+        if (!hasText(usuario) || rolUsuario == null) {
             throw new UnauthorizedActionException("Debe enviar encabezados de contexto válidos: X-Usuario y X-Rol");
         }
     }
@@ -156,4 +153,5 @@ public class DepartamentoService {
                 .fechaCreacion(d.getFechaCreacion())
                 .build();
     }
+    private static boolean hasText(String value){return value!=null&&!value.isBlank();}
 }

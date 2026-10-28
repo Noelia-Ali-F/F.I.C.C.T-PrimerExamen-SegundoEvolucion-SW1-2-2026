@@ -1,13 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
-import '../data/generated_backend_api.dart';
+import '../domain/ports/backend_api_port.dart';
+import '../domain/ports/speech_input_port.dart';
+import '../domain/assistant_api_result.dart';
+import '../application/assistant_use_cases.dart';
 import '../domain/assistant_command.dart';
 import '../domain/local_intent_engine.dart';
-import '../../offline_sync/data/sync_service.dart';
+import '../../offline_sync/presentation/sync_controller.dart';
 
 enum _AssistantStatus {
   ready,
@@ -23,12 +24,14 @@ class AssistantPage extends StatefulWidget {
   const AssistantPage({
     super.key,
     required this.api,
+    required this.speech,
     required this.syncService,
     this.intentEngine = const LocalIntentEngine(),
   });
 
-  final GeneratedBackendApi api;
-  final SyncService syncService;
+  final BackendApiPort api;
+  final SpeechInputPort speech;
+  final SyncController syncService;
   final LocalIntentEngine intentEngine;
 
   @override
@@ -37,7 +40,9 @@ class AssistantPage extends StatefulWidget {
 
 class _AssistantPageState extends State<AssistantPage> {
   final _controller = TextEditingController();
-  final _speech = SpeechToText();
+  SpeechInputPort get _speech => widget.speech;
+  AssistantUseCases get _assistant =>
+      AssistantUseCases(api: widget.api, engine: widget.intentEngine);
   _AssistantStatus _status = _AssistantStatus.ready;
   String? _message;
   String? _transcript;
@@ -99,16 +104,10 @@ class _AssistantPageState extends State<AssistantPage> {
       _transcript = '';
       _voiceFinalHandled = false;
     });
-    await _speech.listen(
-      onResult: _onSpeechResult,
-      listenOptions: SpeechListenOptions(
-        localeId: 'es_BO',
-        partialResults: true,
-      ),
-    );
+    await _speech.listen(onResult: _onSpeechResult);
   }
 
-  void _onSpeechResult(SpeechRecognitionResult result) {
+  void _onSpeechResult(VoiceTranscript result) {
     if (!mounted) return;
     final words = result.recognizedWords.trim();
     setState(() {
@@ -141,7 +140,7 @@ class _AssistantPageState extends State<AssistantPage> {
       _result = null;
     });
     await Future<void>.delayed(const Duration(milliseconds: 120));
-    final interpretation = widget.intentEngine.interpret(input);
+    final interpretation = _assistant.interpret(input);
     if (!mounted) return;
     if (!interpretation.isReady) {
       setState(() {
@@ -215,7 +214,7 @@ class _AssistantPageState extends State<AssistantPage> {
       return;
     }
     try {
-      final result = await widget.api.execute(command);
+      final result = await _assistant.execute(command);
       if (!mounted) return;
       setState(() {
         _status = _AssistantStatus.success;

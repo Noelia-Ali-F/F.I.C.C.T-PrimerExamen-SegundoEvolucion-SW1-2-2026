@@ -1,7 +1,7 @@
 package com.arqnova.repositorios.jpa;
 
 import com.arqnova.modelo.enums.RolUsuario;
-import com.arqnova.modelo.entidades.UserEntity;
+import com.arqnova.repositorios.jpa.entidades.UserEntity;
 import com.arqnova.repositorios.jpa.UserJpaRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

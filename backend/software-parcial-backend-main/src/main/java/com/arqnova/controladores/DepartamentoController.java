@@ -4,7 +4,7 @@ import com.arqnova.modelo.enums.RolUsuario;
 import com.arqnova.modelo.dto.request.CrearDepartamentoRequest;
 import com.arqnova.modelo.dto.response.ApiResponse;
 import com.arqnova.modelo.dto.response.DepartamentoResponse;
-import com.arqnova.servicios.DepartamentoService;
+import com.arqnova.servicios.puertos.entrada.DepartamentoUseCase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -36,7 +36,7 @@ import java.util.Map;
 @Tag(name = "Departamentos", description = "Gestión de departamentos del sistema. CRUD administrativo con soft-delete.")
 public class DepartamentoController {
 
-    private final DepartamentoService departamentoService;
+    private final DepartamentoUseCase departamentoService;
     // ─── GET: Listar todos (admin view — incluye inactivos) ───────────────────
 
     @GetMapping

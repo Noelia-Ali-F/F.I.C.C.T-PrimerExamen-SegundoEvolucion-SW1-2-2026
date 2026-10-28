@@ -1,6 +1,6 @@
 package com.arqnova.repositorios.jpa;
 
-import com.arqnova.modelo.entidades.UmlDiagramEntity;
+import com.arqnova.repositorios.jpa.entidades.UmlDiagramEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;

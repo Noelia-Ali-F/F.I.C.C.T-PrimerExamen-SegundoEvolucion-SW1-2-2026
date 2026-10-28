@@ -1,56 +1,63 @@
-# Backend Spring Boot: cuatro capas
+# Arquitectura hexagonal dentro de las cuatro capas
 
-ArqNova conserva Java 17 y Spring Boot 3.3.9. El código de aplicación se distribuye en cuatro paquetes principales bajo `com.arqnova`; la clase de arranque `ArqNovaApplication` permanece en el paquete raíz para que Spring detecte componentes, entidades y repositorios.
+ArqNova mantiene Java 17, Spring Boot y exactamente los cuatro paquetes principales exigidos por el examen: **modelo, servicios, controladores y repositorios**. La arquitectura hexagonal se aplica mediante inversión de dependencias; no se crea una quinta capa principal ni se cambia el contrato del sistema.
 
-| Capa | Contenido | Dependencias internas permitidas |
+| Capa obligatoria | Papel en la arquitectura | Dependencias |
 |---|---|---|
-| `modelo` | POJOs, `entidades`, `enums`, `dto` y `excepciones` | Modelo |
-| `servicios` | Casos de uso, implementaciones, IA, persistencia de proyectos, seguridad e inicialización | Modelo y repositorios |
-| `controladores` | REST, STOMP/WebSocket, filtros, configuración de transporte y manejo global de errores | Modelo y servicios |
-| `repositorios` | Almacenes de usuarios y sesiones, mapeo de persistencia y repositorios `jpa` | Modelo |
-
-## Distribución
+| `modelo` | Entidades de dominio, valores, excepciones y contratos de datos | Sin dependencias de las otras capas; las entidades de dominio no contienen JPA/Hibernate |
+| `servicios` | Casos de uso, puertos de entrada y puertos de salida | Modelo y otros contratos del núcleo; sin Spring, JPA, HTTP, almacenamiento ni implementaciones externas |
+| `controladores` | Adaptadores de entrada REST, WebSocket, seguridad de transporte y composición Spring | Puertos y modelos; `configuracion` ensambla las implementaciones |
+| `repositorios` | Adaptadores de salida: JPA/PostgreSQL, IA, archivos, criptografía, serialización y generación | Implementa puertos definidos en `servicios`; depende del núcleo |
 
 ```text
 com.arqnova
-├── ArqNovaApplication
-├── modelo
-│   ├── entidades
-│   ├── enums
-│   ├── dto
-│   │   ├── project
-│   │   ├── request
-│   │   └── response
-│   └── excepciones
-├── servicios
-│   ├── impl
-│   ├── persistencia
-│   ├── seguridad
-│   └── configuracion
-├── controladores
-│   ├── configuracion
-│   ├── seguridad
-│   └── excepciones
-└── repositorios
-    └── jpa
+├── ArqNovaApplication.java
+├── modelo/
+│   ├── entidades/             POJOs de dominio, sin anotaciones de persistencia
+│   ├── dto/                   Contratos existentes y validación de entrada
+│   ├── generacion/            Valores de los artefactos generados
+│   ├── seguridad/             Claims del token
+│   └── excepciones/
+├── servicios/
+│   ├── puertos/entrada/       Proyectos, colaboración, bloqueos, consultas e imágenes
+│   ├── puertos/salida/        Contratos de persistencia, IA, archivos y seguridad
+│   ├── impl/                  Casos de uso independientes del framework
+│   └── persistencia/          Reglas de acceso, membresías y versiones del proyecto
+├── controladores/
+│   ├── adaptadores/           Conversión MultipartFile → BinaryFile
+│   ├── configuracion/        HexagonalConfiguration y configuración de transporte
+│   ├── seguridad/
+│   └── excepciones/
+└── repositorios/
+    ├── jpa/entidades/         Mapeo ORM original, tablas y callbacks de auditoría
+    ├── jpa/adaptadores/       Traducción explícita entre JPA y dominio
+    ├── ia/                   Intérprete y pipeline Gemini/Groq/OpenAI existente
+    ├── archivos/             Avatares y puente multipart del adaptador
+    ├── seguridad/            HMAC y BCrypt
+    ├── serializacion/        Copia JSON de grafos
+    └── generacion/           Plantillas Spring Boot, Flutter y Postman
 ```
 
-Las entidades JPA y los modelos del dominio mantienen sus clases y responsabilidades originales; se agrupan dentro de `modelo` sin cambiar tablas, columnas ni migraciones. Los DTO mantienen los mismos campos JSON.
+## Reglas de dependencia
 
-`DepartamentoService` concentra las reglas de departamentos que antes estaban en el controlador: contexto, autorización, duplicados, normalización, desactivación y reactivación. `UsuarioConsultaService` permite a los filtros y a WebSocket consultar usuarios mediante la capa de servicios. Los permisos y mensajes se conservan.
+Los puertos pertenecen al núcleo. Por ejemplo, `UmlProjectPersistenceService` utiliza `ProjectDataPort`, `ProjectMemberDataPort`, `UmlDiagramDataPort` y `UserDataPort`; no importa repositorios Spring Data. Los adaptadores `Jpa*Adapter` implementan esos puertos, convierten los datos a POJOs y mantienen las consultas y los bloqueos existentes.
 
-La configuración web, el filtro de autenticación y el manejador HTTP de excepciones pertenecen a `controladores`. La firma de tokens, las contraseñas y el seed pertenecen a `servicios`. Se mantienen dentro de las cuatro capas, sin crear capas principales adicionales.
+Los controladores reciben casos de uso. Los archivos se convierten en `BinaryFile` antes de cruzar el puerto; el núcleo no conoce `MultipartFile`. Las implementaciones externas de IA permanecen juntas para conservar íntegros los prompts, el respaldo entre proveedores, los límites y la revisión de relaciones. Los generadores siguen entregando los mismos formatos y plantillas; la organización interna de los proyectos descargados no se cambia por esta refactorización.
 
-## Compatibilidad y pruebas
+`HexagonalConfiguration` es la raíz de composición. Crea los servicios y aplica las mismas políticas transaccionales y de solo lectura que antes estaban declaradas con anotaciones en los casos de uso. Las escrituras de proyecto y membresía permanecen en una misma transacción. El bloqueo pesimista del diagrama se mantiene en el adaptador JPA. `DataSeeder` conserva su condición de perfil `seed` y `FORCE_SEED`.
 
-- Las rutas REST, los DTO, los encabezados y los destinos STOMP se conservan.
-- Las ocho migraciones Flyway existentes no se modifican.
-- Los proveedores Gemini/GroqCloud mantienen su configuración y respaldo automático.
-- La generación de proyectos Spring Boot y Flutter conserva sus plantillas y formatos de descarga.
-- Las pruebas existentes se trasladan con sus paquetes; se agregan reglas de arquitectura y pruebas de las reglas extraídas de departamentos.
-- Las pruebas de arquitectura rechazan código fuera de las cuatro capas y dependencias en sentido incorrecto.
+## Compatibilidad y verificación
 
-Esta estructura es una arquitectura por capas con Spring Boot. No se presenta como arquitectura hexagonal. Es una reorganización técnica de las funcionalidades existentes, sin atribuir nuevas funcionalidades al segundo examen.
+- Se conservan las rutas REST, DTO, encabezados, roles, versiones del modelo y destinos STOMP.
+- No se modifican tablas, columnas, migraciones Flyway ni datos guardados.
+- Los algoritmos de IA, XMI, generación, firmas y contraseñas se conservan detrás de sus puertos.
+- Las pruebas de arquitectura exigen las cuatro capas e impiden dependencias desde el núcleo hacia Spring, JPA o adaptadores.
+- La integración con PostgreSQL prueba persistencia, permisos, versiones y rollback si falla la membresía después de guardar el proyecto.
+- Los casos de uso también se prueban con implementaciones de puertos en memoria, sin nube ni HTTP.
+
+Esta es una reorganización técnica. No atribuye nuevas funcionalidades al segundo examen.
+
+La organización de Angular y Flutter se describe en [la arquitectura del proyecto](../../docs/arquitectura-hexagonal.md).
 
 ## Lectura de diagramas manuscritos
 

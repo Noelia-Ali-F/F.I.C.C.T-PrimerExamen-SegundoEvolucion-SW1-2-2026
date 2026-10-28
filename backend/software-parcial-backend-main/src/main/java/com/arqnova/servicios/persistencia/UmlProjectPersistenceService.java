@@ -7,17 +7,14 @@ import com.arqnova.modelo.entidades.ProjectMemberId;
 import com.arqnova.modelo.entidades.ProjectMemberRole;
 import com.arqnova.modelo.entidades.ProjectStatus;
 import com.arqnova.modelo.entidades.UmlDiagramEntity;
-import com.arqnova.repositorios.jpa.ProjectJpaRepository;
-import com.arqnova.repositorios.jpa.ProjectMemberJpaRepository;
-import com.arqnova.repositorios.jpa.UmlDiagramJpaRepository;
-import com.arqnova.repositorios.jpa.UserJpaRepository;
+import com.arqnova.servicios.puertos.salida.ProjectDataPort;
+import com.arqnova.servicios.puertos.salida.ProjectMemberDataPort;
+import com.arqnova.servicios.puertos.salida.UmlDiagramDataPort;
+import com.arqnova.servicios.puertos.salida.UserDataPort;
 import com.arqnova.modelo.excepciones.DuplicateResourceException;
 import com.arqnova.modelo.excepciones.ResourceNotFoundException;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -25,16 +22,14 @@ import java.util.List;
 import java.util.Set;
 import java.time.LocalDateTime;
 
-@Service
 @RequiredArgsConstructor
-public class UmlProjectPersistenceService {
+public class UmlProjectPersistenceService implements com.arqnova.servicios.puertos.entrada.ProjectUseCase {
 
-    private final ProjectJpaRepository projectRepository;
-    private final ProjectMemberJpaRepository memberRepository;
-    private final UmlDiagramJpaRepository diagramRepository;
-    private final UserJpaRepository userRepository;
+    private final ProjectDataPort projectRepository;
+    private final ProjectMemberDataPort memberRepository;
+    private final UmlDiagramDataPort diagramRepository;
+    private final UserDataPort userRepository;
 
-    @Transactional
     public ProjectEntity createProject(String id, String name, String description, String ownerUserId) {
         requireText(id, "projectId");
         requireText(name, "name");
@@ -65,17 +60,14 @@ public class UmlProjectPersistenceService {
         return project;
     }
 
-    @Transactional(readOnly = true)
     public Optional<ProjectEntity> findProjectById(String projectId) {
         return projectRepository.findById(projectId);
     }
 
-    @Transactional
     public UmlDiagramEntity saveDiagram(String diagramId, String projectId, Map<String, Object> model) {
         return saveDiagram(diagramId, projectId, model, null);
     }
 
-    @Transactional
     public UmlDiagramEntity saveDiagram(String diagramId, String projectId, Map<String, Object> model,
                                         Integer expectedVersion) {
         requireText(diagramId, "diagramId");
@@ -109,12 +101,10 @@ public class UmlProjectPersistenceService {
         return diagramRepository.save(diagram);
     }
 
-    @Transactional(readOnly = true)
     public Optional<UmlDiagramEntity> findDiagramByProjectId(String projectId) {
         return diagramRepository.findByProjectId(projectId);
     }
 
-    @Transactional
     public ProjectMemberEntity addMember(String projectId, String userId, ProjectMemberRole role) {
         requireText(projectId, "projectId");
         requireText(userId, "userId");
@@ -135,7 +125,6 @@ public class UmlProjectPersistenceService {
                         .build()));
     }
 
-    @Transactional
     public ProjectMemberEntity acceptInvitation(String projectId, String userId, ProjectMemberRole invitedRole) {
         ProjectMemberId id = new ProjectMemberId(projectId, userId);
         return memberRepository.findById(id)
@@ -151,7 +140,6 @@ public class UmlProjectPersistenceService {
                 .orElseGet(() -> addMember(projectId, userId, invitedRole));
     }
 
-    @Transactional
     public void deleteProject(String projectId) {
         if (projectRepository.existsById(projectId)) {
             projectRepository.deleteById(projectId);
@@ -159,7 +147,6 @@ public class UmlProjectPersistenceService {
         }
     }
 
-    @Transactional(readOnly = true)
     public List<ProjectEntity> listAccessible(String userId) {
         if (isAdministrator(userId)) {
             return projectRepository.findAllByOrderByUpdatedAtDesc();
@@ -169,7 +156,6 @@ public class UmlProjectPersistenceService {
         return projectIds.isEmpty() ? List.of() : projectRepository.findByIdInOrderByUpdatedAtDesc(projectIds);
     }
 
-    @Transactional(readOnly = true)
     public ProjectMemberRole requireAccess(String projectId, String userId, ProjectMemberRole... allowed) {
         if (!projectRepository.existsById(projectId)) {
             throw new ResourceNotFoundException("Proyecto", "id", projectId);
@@ -186,7 +172,6 @@ public class UmlProjectPersistenceService {
         return role;
     }
 
-    @Transactional
     public ProjectEntity updateProject(String projectId, String userId, String name, String description,
                                        ProjectStatus status) {
         requireAccess(projectId, userId, ProjectMemberRole.OWNER);
@@ -205,7 +190,6 @@ public class UmlProjectPersistenceService {
         return projectRepository.save(project);
     }
 
-    @Transactional
     public void deleteProjectAuthorized(String projectId, String userId) {
         requireAccess(projectId, userId, ProjectMemberRole.OWNER);
         projectRepository.deleteById(projectId);

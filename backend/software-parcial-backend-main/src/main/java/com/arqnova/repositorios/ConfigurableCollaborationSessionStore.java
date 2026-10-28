@@ -1,7 +1,9 @@
 package com.arqnova.repositorios;
+import com.arqnova.servicios.puertos.salida.CollaborationSessionStore;
 
 import com.arqnova.modelo.UmlCollaborationSession;
 import com.arqnova.modelo.entidades.*;
+import com.arqnova.repositorios.jpa.entidades.UmlCollaborationSessionEntity;
 import com.arqnova.repositorios.jpa.*;
 import org.springframework.stereotype.Component;
 import java.util.*;

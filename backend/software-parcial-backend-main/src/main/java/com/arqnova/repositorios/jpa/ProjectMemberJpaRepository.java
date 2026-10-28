@@ -1,7 +1,7 @@
 package com.arqnova.repositorios.jpa;
 
-import com.arqnova.modelo.entidades.ProjectMemberEntity;
-import com.arqnova.modelo.entidades.ProjectMemberId;
+import com.arqnova.repositorios.jpa.entidades.ProjectMemberEntity;
+import com.arqnova.repositorios.jpa.entidades.ProjectMemberId;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

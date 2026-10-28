@@ -7,9 +7,9 @@ import com.arqnova.modelo.dto.request.LoginRequest;
 import com.arqnova.modelo.dto.request.RegisterRequest;
 import com.arqnova.modelo.excepciones.AuthenticationRequiredException;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
-import com.arqnova.repositorios.UserStore;
-import com.arqnova.servicios.seguridad.AuthTokenService;
-import com.arqnova.servicios.seguridad.PasswordService;
+import com.arqnova.servicios.puertos.salida.UserStore;
+import com.arqnova.repositorios.seguridad.AuthTokenService;
+import com.arqnova.repositorios.seguridad.PasswordService;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;

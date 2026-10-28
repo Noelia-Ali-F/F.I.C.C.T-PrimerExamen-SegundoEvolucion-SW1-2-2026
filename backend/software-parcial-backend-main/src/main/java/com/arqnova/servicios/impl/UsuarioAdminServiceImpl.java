@@ -7,31 +7,28 @@ import com.arqnova.modelo.dto.request.CrearUsuarioRequest;
 import com.arqnova.modelo.dto.response.UsuarioAdminResponse;
 import com.arqnova.modelo.excepciones.DuplicateResourceException;
 import com.arqnova.modelo.excepciones.ResourceNotFoundException;
-import com.arqnova.repositorios.DepartamentoRepository;
-import com.arqnova.repositorios.UserStore;
+import com.arqnova.servicios.puertos.salida.DepartamentoStore;
+import com.arqnova.servicios.puertos.salida.UserStore;
 import com.arqnova.servicios.UsuarioAdminService;
-import com.arqnova.servicios.AvatarStorageService;
-import com.arqnova.servicios.seguridad.PasswordService;
+import com.arqnova.servicios.puertos.salida.AvatarStoragePort;
+import com.arqnova.servicios.puertos.salida.PasswordPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
-import org.springframework.web.multipart.MultipartFile;
+import com.arqnova.modelo.BinaryFile;
 
 @Slf4j
-@Service
 @RequiredArgsConstructor
 public class UsuarioAdminServiceImpl implements UsuarioAdminService {
 
-    // Departments are dynamically loaded from DB via DepartamentoRepository
+    // Departments are dynamically loaded from DB via DepartamentoStore
 
     private final UserStore usuarioRepository;
-    private final DepartamentoRepository departamentoRepository;
-    private final PasswordService passwordService;
-    private final AvatarStorageService avatarStorageService;
+    private final DepartamentoStore departamentoRepository;
+    private final PasswordPort passwordService;
+    private final AvatarStoragePort avatarStorageService;
 
     @Override
     public List<UsuarioAdminResponse> listarUsuarios() {
@@ -98,7 +95,7 @@ public class UsuarioAdminServiceImpl implements UsuarioAdminService {
     }
 
     @Override
-    public UsuarioAdminResponse actualizarAvatar(String id, MultipartFile avatar, String usuarioResponsable) {
+    public UsuarioAdminResponse actualizarAvatar(String id, BinaryFile avatar, String usuarioResponsable) {
         Usuario existente = buscarUsuarioPorId(id);
         String avatarUrl = avatarStorageService.almacenarAvatar(avatar, usuarioResponsable);
         existente.setAvatarUrl(avatarUrl);

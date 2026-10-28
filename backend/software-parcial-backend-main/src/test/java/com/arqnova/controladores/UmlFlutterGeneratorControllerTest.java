@@ -1,6 +1,6 @@
 package com.arqnova.controladores;
 
-import com.arqnova.servicios.impl.UmlFlutterGeneratorServiceImpl;
+import com.arqnova.repositorios.generacion.UmlFlutterGeneratorAdapter;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class UmlFlutterGeneratorControllerTest {
     @Test
     void returnsDownloadableFlutterZipFromCurrentEditorModel() throws Exception {
-        var mvc = MockMvcBuilders.standaloneSetup(new UmlFlutterGeneratorController(new UmlFlutterGeneratorServiceImpl())).build();
+        var mvc = MockMvcBuilders.standaloneSetup(new UmlFlutterGeneratorController(new com.arqnova.servicios.impl.UmlFlutterGeneratorServiceImpl(new UmlFlutterGeneratorAdapter()))).build();
         String json = """
                 {"projectName":"clientes_mobile","backendBaseUrl":"http://10.0.2.2:8080",
                  "model":{"classes":[{"id":"cliente","name":"Cliente","x":100,"y":200,"data":{},

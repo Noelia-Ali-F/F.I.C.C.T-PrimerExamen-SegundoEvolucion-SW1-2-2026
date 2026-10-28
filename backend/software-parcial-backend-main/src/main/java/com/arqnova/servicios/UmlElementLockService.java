@@ -1,10 +1,6 @@
 package com.arqnova.servicios;
 
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,14 +8,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Service
-public class UmlElementLockService {
+public class UmlElementLockService implements com.arqnova.servicios.puertos.entrada.ElementLockUseCase {
     private final Map<LockKey, ElementLock> locks = new ConcurrentHashMap<>();
     private final long ttlMillis;
     private final Clock clock;
 
-    @Autowired
-    public UmlElementLockService(@Value("${uml.collaboration.lock-ttl-ms:45000}") long ttlMillis) {
+    public UmlElementLockService(long ttlMillis) {
         this(ttlMillis, Clock.systemUTC());
     }
 
@@ -98,7 +92,6 @@ public class UmlElementLockService {
     }
 
     private record LockKey(String sessionId, String elementType, String elementId) {}
-    public record AcquireResult(boolean granted, ElementLock lock) {}
-    public record ElementLock(String projectId, String sessionId, String elementId, String elementType,
-                              String userId, String userName, String socketId, long lockedAt, long expiresAt) {}
+
+
 }

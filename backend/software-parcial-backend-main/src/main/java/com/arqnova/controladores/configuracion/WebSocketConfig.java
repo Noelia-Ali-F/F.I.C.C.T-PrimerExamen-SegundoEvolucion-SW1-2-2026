@@ -1,6 +1,6 @@
 package com.arqnova.controladores.configuracion;
 
-import com.arqnova.servicios.seguridad.AuthTokenService;
+import com.arqnova.servicios.puertos.entrada.TokenValidationUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -21,8 +21,8 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    private final AuthTokenService authTokenService;
-    private final com.arqnova.servicios.UsuarioConsultaService usuarioRepository;
+    private final TokenValidationUseCase authTokenService;
+    private final com.arqnova.servicios.puertos.entrada.UserQueryUseCase usuarioRepository;
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
@@ -37,7 +37,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         throw new MessagingException("Autenticación WebSocket requerida");
                     }
                     try {
-                        AuthTokenService.Claims claims = authTokenService.verificar(authorization.substring(7));
+                        TokenValidationUseCase.Claims claims = authTokenService.verificar(authorization.substring(7));
                         com.arqnova.modelo.Usuario usuario = usuarioRepository.findByUsername(claims.username())
                                 .orElseThrow(() -> new MessagingException("Usuario WebSocket inexistente"));
                         if (Boolean.FALSE.equals(usuario.getHabilitado())) {

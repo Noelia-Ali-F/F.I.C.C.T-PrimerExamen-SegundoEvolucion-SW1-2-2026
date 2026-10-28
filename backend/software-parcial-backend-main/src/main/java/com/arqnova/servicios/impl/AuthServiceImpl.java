@@ -8,24 +8,21 @@ import com.arqnova.modelo.dto.response.CurrentUserResponse;
 import com.arqnova.modelo.excepciones.DuplicateResourceException;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
 import com.arqnova.modelo.excepciones.AuthenticationRequiredException;
-import com.arqnova.repositorios.UserStore;
+import com.arqnova.servicios.puertos.salida.UserStore;
 import com.arqnova.servicios.AuthService;
-import com.arqnova.servicios.seguridad.AuthTokenService;
-import com.arqnova.servicios.seguridad.PasswordService;
+import com.arqnova.servicios.puertos.salida.AuthTokenPort;
+import com.arqnova.servicios.puertos.salida.PasswordPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.time.LocalDateTime;
 
 @Slf4j
-@Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private final UserStore usuarioRepository;
-    private final AuthTokenService tokenService;
-    private final PasswordService passwordService;
+    private final AuthTokenPort tokenService;
+    private final PasswordPort passwordService;
 
     @Override
     public AuthResponse login(LoginRequest request) {

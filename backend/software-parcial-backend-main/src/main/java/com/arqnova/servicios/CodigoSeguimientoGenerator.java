@@ -1,7 +1,5 @@
 package com.arqnova.servicios;
 
-import org.springframework.stereotype.Service;
-
 import java.time.Year;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -12,7 +10,6 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * Usa AtomicLong para seguridad en entornos concurrentes.
  */
-@Service
 public class CodigoSeguimientoGenerator {
 
     private final AtomicLong secuencial = new AtomicLong(0);

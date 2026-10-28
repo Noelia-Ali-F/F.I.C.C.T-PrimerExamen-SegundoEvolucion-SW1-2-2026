@@ -1,6 +1,6 @@
 package com.arqnova.controladores;
 
-import com.arqnova.servicios.impl.UmlBackendGeneratorServiceImpl;
+import com.arqnova.repositorios.generacion.UmlBackendGeneratorAdapter;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -13,7 +13,7 @@ class UmlBackendGeneratorControllerTest {
     @Test
     void endpointAcceptsCurrentEditorPayloadAndReturnsZip() throws Exception {
         MockMvc mvc = MockMvcBuilders.standaloneSetup(
-                new UmlBackendGeneratorController(new UmlBackendGeneratorServiceImpl())).build();
+                new UmlBackendGeneratorController(new com.arqnova.servicios.impl.UmlBackendGeneratorServiceImpl(new UmlBackendGeneratorAdapter()))).build();
         String json = """
                 {"projectName":"cliente-api","basePackage":"com.acme.cliente","includeBasicConfig":true,
                  "model":{"format":"uml-class-diagram","version":2,"title":"Modelo","classes":[

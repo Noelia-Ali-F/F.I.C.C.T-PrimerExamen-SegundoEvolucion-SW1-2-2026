@@ -1,12 +1,12 @@
 package com.arqnova.controladores;
 
 import com.arqnova.modelo.dto.request.UmlCollaborationEvent;
-import com.arqnova.servicios.UsuarioConsultaService;
-import com.arqnova.servicios.UmlCollaborationService;
-import com.arqnova.servicios.UmlElementLockService;
+import com.arqnova.servicios.puertos.entrada.UserQueryUseCase;
+import com.arqnova.servicios.puertos.entrada.CollaborationUseCase;
+import com.arqnova.servicios.puertos.entrada.ElementLockUseCase;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
 import com.arqnova.modelo.entidades.ProjectMemberRole;
-import com.arqnova.servicios.persistencia.UmlProjectPersistenceService;
+import com.arqnova.servicios.puertos.entrada.ProjectUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -27,11 +27,11 @@ import java.util.concurrent.ConcurrentHashMap;
 @Controller
 @RequiredArgsConstructor
 public class UmlCollaborationWebSocketController {
-    private final UmlCollaborationService service;
-    private final UsuarioConsultaService usuarioRepository;
+    private final CollaborationUseCase service;
+    private final UserQueryUseCase usuarioRepository;
     private final SimpMessagingTemplate messaging;
-    private final UmlElementLockService lockService;
-    private final UmlProjectPersistenceService projects;
+    private final ElementLockUseCase lockService;
+    private final ProjectUseCase projects;
     private final Map<String, Map<String, Participant>> rooms = new ConcurrentHashMap<>();
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
 
@@ -176,7 +176,7 @@ public class UmlCollaborationWebSocketController {
     }
 
     private UmlCollaborationEvent lockEvent(String type, UmlCollaborationEvent request,
-                                            UmlElementLockService.ElementLock lock, String operation,
+                                            ElementLockUseCase.ElementLock lock, String operation,
                                             String requesterId) {
         Map<String, Object> data = new LinkedHashMap<>();
         if (lock != null) data.put("lock", lock);
@@ -188,7 +188,7 @@ public class UmlCollaborationWebSocketController {
                 .data(data).timestamp(System.currentTimeMillis()).build();
     }
 
-    private UmlCollaborationEvent lockEvent(String type, UmlElementLockService.ElementLock lock,
+    private UmlCollaborationEvent lockEvent(String type, ElementLockUseCase.ElementLock lock,
                                             String operation, String requesterId) {
         UmlCollaborationEvent request = UmlCollaborationEvent.builder().projectId(lock.projectId())
                 .sessionId(lock.sessionId()).elementId(lock.elementId()).elementType(lock.elementType())

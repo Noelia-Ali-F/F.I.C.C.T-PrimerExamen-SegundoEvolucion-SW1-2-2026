@@ -2,7 +2,7 @@ package com.arqnova.servicios;
 
 import com.arqnova.modelo.dto.request.UmlBackendGenerationRequest;
 import com.arqnova.modelo.dto.request.UmlBackendGenerationRequest.*;
-import com.arqnova.servicios.impl.UmlBackendGeneratorServiceImpl;
+import com.arqnova.repositorios.generacion.UmlBackendGeneratorAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +16,7 @@ import java.util.zip.ZipInputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class UmlBackendGeneratorServiceTest {
-    private final UmlBackendGeneratorServiceImpl service = new UmlBackendGeneratorServiceImpl();
+    private final UmlBackendGeneratorAdapter service = new UmlBackendGeneratorAdapter();
 
     @Test
     void ignoresEditorPositionAndMetadataFieldsWhenDeserializingRequest() throws Exception {

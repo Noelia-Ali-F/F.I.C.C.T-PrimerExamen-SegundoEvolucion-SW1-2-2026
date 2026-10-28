@@ -3,10 +3,8 @@ package com.arqnova.servicios.impl;
 import com.arqnova.modelo.dto.request.UmlAiCommandRequest;
 import com.arqnova.modelo.dto.response.UmlAiCommandResponse;
 import com.arqnova.modelo.dto.response.UmlAiOperationResponse;
-import com.arqnova.servicios.OpenAiUmlInterpreter;
+import com.arqnova.servicios.puertos.salida.UmlInterpretationPort;
 import com.arqnova.servicios.UmlAiCommandService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
 import lombok.extern.slf4j.Slf4j;
 
 import java.text.Normalizer;
@@ -20,16 +18,17 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Service
 @Slf4j
 public class UmlAiCommandServiceImpl implements UmlAiCommandService {
     private static final String NAME = "([\\p{L}][\\p{L}\\p{N}_-]*)";
     private static final String ASSOCIATION_CLASS_NAME = "([\\p{L}][\\p{L}\\p{N}_-]*(?:\\s+[\\p{L}][\\p{L}\\p{N}_-]*)*?)";
     private static final String MULTIPLICITY = "(cero o muchos|cero o varios|uno o muchos|uno o más|uno o mas|cero o uno|tantos|muchos|varios|uno|cero|\\d+(?:\\.\\.(?:\\d+|\\*))?|\\*|n)";
-    private OpenAiUmlInterpreter openAi;
+    private UmlInterpretationPort openAi;
 
-    @Autowired(required = false)
-    void setOpenAi(OpenAiUmlInterpreter openAi) { this.openAi = openAi; }
+    void setOpenAi(UmlInterpretationPort openAi) { this.openAi = openAi; }
+
+    public UmlAiCommandServiceImpl(){this(null);}
+    public UmlAiCommandServiceImpl(UmlInterpretationPort interpreter){this.openAi=interpreter;}
 
     @Override
     public UmlAiCommandResponse interpret(UmlAiCommandRequest request) {

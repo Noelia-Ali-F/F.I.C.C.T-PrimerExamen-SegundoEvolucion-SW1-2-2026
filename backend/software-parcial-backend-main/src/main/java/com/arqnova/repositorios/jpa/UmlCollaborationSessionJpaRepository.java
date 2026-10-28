@@ -1,6 +1,6 @@
 package com.arqnova.repositorios.jpa;
 
-import com.arqnova.modelo.entidades.UmlCollaborationSessionEntity;
+import com.arqnova.repositorios.jpa.entidades.UmlCollaborationSessionEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 

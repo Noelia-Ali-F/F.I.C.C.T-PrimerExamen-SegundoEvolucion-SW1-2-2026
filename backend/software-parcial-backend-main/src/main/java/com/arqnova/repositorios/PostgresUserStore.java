@@ -1,8 +1,9 @@
 package com.arqnova.repositorios;
+import com.arqnova.servicios.puertos.salida.UserStore;
 
 import com.arqnova.modelo.enums.RolUsuario;
 import com.arqnova.modelo.Usuario;
-import com.arqnova.modelo.entidades.UserEntity;
+import com.arqnova.repositorios.jpa.entidades.UserEntity;
 import com.arqnova.repositorios.jpa.UserJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

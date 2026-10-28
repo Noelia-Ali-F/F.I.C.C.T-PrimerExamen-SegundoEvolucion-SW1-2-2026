@@ -238,12 +238,14 @@ El backend Spring Boot está organizado en cuatro capas bajo `com.arqnova`. La r
 com/arqnova/
 ├── ArqNovaApplication.java
 ├── modelo/          Modelos, entidades JPA, enumeraciones, DTO y excepciones
-├── servicios/       Lógica de negocio, IA, seguridad e inicialización
+├── servicios/       Casos de uso y puertos de entrada/salida
 ├── controladores/   REST, WebSocket, filtros, configuración web y manejo de errores
-└── repositorios/    Acceso a datos, almacenes y repositorios Spring Data JPA
+└── repositorios/    Adaptadores JPA, IA, archivos, seguridad y generación
 ```
 
-Los controladores delegan en servicios; los servicios utilizan repositorios y modelos. Los modelos no dependen de las otras capas. Las pruebas de arquitectura verifican esta dirección de dependencias.
+La arquitectura hexagonal se implementa dentro de esas cuatro capas: `servicios` define los casos de uso y los puertos, `controladores` adapta las entradas y `repositorios` implementa las salidas. El núcleo no depende de Spring, JPA, HTTP ni implementaciones externas. Angular y Flutter también separan dominio, aplicación y adaptadores. Las pruebas de arquitectura verifican estas dependencias.
+
+La migración conserva rutas, datos, formatos, transacciones y funcionalidades. Es una reorganización técnica y no añade funcionalidades al segundo examen. Véase [arquitectura hexagonal](docs/arquitectura-hexagonal.md).
 
 Consulta la [guía de organización del backend](backend/software-parcial-backend-main/ARQUITECTURA.md). Es una reorganización técnica de la base existente; no representa una nueva funcionalidad del segundo examen.
 

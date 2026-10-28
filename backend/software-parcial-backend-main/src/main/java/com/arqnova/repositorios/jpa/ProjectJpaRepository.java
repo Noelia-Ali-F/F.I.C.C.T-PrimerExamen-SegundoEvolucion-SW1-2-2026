@@ -1,6 +1,6 @@
 package com.arqnova.repositorios.jpa;
 
-import com.arqnova.modelo.entidades.ProjectEntity;
+import com.arqnova.repositorios.jpa.entidades.ProjectEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Collection;

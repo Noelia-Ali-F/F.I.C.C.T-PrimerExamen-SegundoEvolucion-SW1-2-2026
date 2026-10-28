@@ -1,7 +1,7 @@
 package com.arqnova.repositorios;
 
 import com.arqnova.modelo.Departamento;
-import com.arqnova.modelo.entidades.DepartmentEntity;
+import com.arqnova.repositorios.jpa.entidades.DepartmentEntity;
 import com.arqnova.repositorios.jpa.DepartmentJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository @RequiredArgsConstructor
-public class DepartamentoRepository {
+public class DepartamentoRepository implements com.arqnova.servicios.puertos.salida.DepartamentoStore {
     private final DepartmentJpaRepository repository;
     public boolean existsByNombreIgnoreCase(String n){return repository.existsByNameIgnoreCase(n);}
     public Optional<Departamento> findByNombreIgnoreCase(String n){return repository.findByNameIgnoreCase(n).map(this::domain);}

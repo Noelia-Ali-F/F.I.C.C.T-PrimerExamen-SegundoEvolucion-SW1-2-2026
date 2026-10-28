@@ -1,6 +1,6 @@
 package com.arqnova.repositorios.jpa;
 
-import com.arqnova.modelo.entidades.ProjectMemberId;
+import com.arqnova.repositorios.jpa.entidades.ProjectMemberId;
 import com.arqnova.modelo.entidades.ProjectMemberRole;
 import com.arqnova.modelo.entidades.ProjectStatus;
 import com.arqnova.modelo.entidades.UmlDiagramEntity;
@@ -162,5 +162,17 @@ class UmlProjectPersistenceServiceIntegrationTest {
         Map<String, Object> result = new LinkedHashMap<>();
         for (int i = 0; i < values.length; i += 2) result.put((String) values[i], values[i + 1]);
         return result;
+    }
+    @Test
+    void rollsBackProjectWhenMembershipPersistenceFails() {
+        String id="hexagonal-atomic-rollback";
+        jdbcTemplate.execute("alter table project_members add constraint hexagonal_rollback_probe check (project_id <> 'hexagonal-atomic-rollback')");
+        try {
+            assertThrows(RuntimeException.class,()->service.createProject(id,"Atomic rollback","",OWNER_ID));
+            assertFalse(projectRepository.existsById(id),"El fallo del miembro debe revertir también el proyecto");
+        } finally {
+            jdbcTemplate.execute("alter table project_members drop constraint hexagonal_rollback_probe");
+            service.deleteProject(id);
+        }
     }
 }

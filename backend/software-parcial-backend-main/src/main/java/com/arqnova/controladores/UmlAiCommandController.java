@@ -14,14 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
-import com.arqnova.servicios.OpenAiUmlInterpreter;
+import com.arqnova.servicios.puertos.entrada.UmlImageAnalysisUseCase;
+import com.arqnova.modelo.excepciones.AiProviderException;
 
 @RestController
 @RequestMapping("/api/v1/uml-ai")
 @RequiredArgsConstructor
 public class UmlAiCommandController {
     private final UmlAiCommandService service;
-    private final OpenAiUmlInterpreter openAi;
+    private final UmlImageAnalysisUseCase openAi;
 
     @PostMapping("/interpret")
     public ResponseEntity<ApiResponse<UmlAiCommandResponse>> interpret(
@@ -37,11 +38,11 @@ public class UmlAiCommandController {
             return imageError(400,"INVALID_IMAGE","El archivo seleccionado no es una imagen válida.");
         }
         try {
-            Map<String,Object> result = openAi.analyzeImage(image);
+            Map<String,Object> result = openAi.analyzeImage(com.arqnova.controladores.adaptadores.MultipartFiles.read(image));
             if (!"READY".equals(result.get("status")))
                 return imageError(422,"NO_UML_DETECTED","No se pudieron identificar clases UML con suficiente claridad en la imagen.");
             return ResponseEntity.ok(ApiResponse.ok("Imagen UML analizada", result));
-        } catch (OpenAiUmlInterpreter.ProviderException error) {
+        } catch (AiProviderException error) {
             if (error.httpStatus == 400 || error.httpStatus == 401 || error.httpStatus == 403)
                 return imageError(502,"AI_PROVIDER_REJECTED","El servicio de IA rechazó el análisis. Contacta al administrador.");
             return error.httpStatus == 429

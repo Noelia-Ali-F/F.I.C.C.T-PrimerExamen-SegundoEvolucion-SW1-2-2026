@@ -1,6 +1,8 @@
 package com.arqnova.repositorios.jpa;
 
 import com.arqnova.modelo.entidades.*;
+import com.arqnova.repositorios.jpa.entidades.ProjectEntity;
+import com.arqnova.repositorios.jpa.entidades.UmlCollaborationSessionEntity;
 import com.arqnova.repositorios.jpa.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

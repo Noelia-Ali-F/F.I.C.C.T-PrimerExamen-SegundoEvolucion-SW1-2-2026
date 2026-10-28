@@ -30,7 +30,7 @@ class UmlProjectAuthorizationIntegrationTest {
 
     @Test
     void enforcesMembershipRolesAndModelVersion() {
-        users.saveAndFlush(com.arqnova.modelo.entidades.UserEntity.builder().id(ADMIN).username(ADMIN)
+        users.saveAndFlush(com.arqnova.repositorios.jpa.entidades.UserEntity.builder().id(ADMIN).username(ADMIN)
                 .passwordHash("integration-test-placeholder").fullName("Test administrator")
                 .role(com.arqnova.modelo.enums.RolUsuario.ADMINISTRADOR).enabled(true).build());
         service.createProject(PROJECT, "Veterinaria", "Proyecto", "owner-a");

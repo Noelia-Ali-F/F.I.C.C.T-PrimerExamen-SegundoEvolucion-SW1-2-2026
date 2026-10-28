@@ -3,7 +3,7 @@ package com.arqnova.controladores;
 import com.arqnova.modelo.dto.request.CreateUmlSessionRequest;
 import com.arqnova.modelo.dto.response.ApiResponse;
 import com.arqnova.modelo.dto.response.UmlSessionResponse;
-import com.arqnova.servicios.UmlCollaborationService;
+import com.arqnova.servicios.puertos.entrada.CollaborationUseCase;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/uml-collaboration")
 @RequiredArgsConstructor
 public class UmlCollaborationController {
-    private final UmlCollaborationService service;
+    private final CollaborationUseCase service;
 
     @PostMapping("/sessions")
     public ResponseEntity<ApiResponse<UmlSessionResponse>> start(

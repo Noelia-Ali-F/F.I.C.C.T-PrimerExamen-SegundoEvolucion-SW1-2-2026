@@ -1,3 +1,5 @@
+import '../domain/ports/pending_operation_store.dart';
+export '../domain/ports/pending_operation_store.dart';
 import 'dart:convert';
 
 import 'package:path/path.dart' as path;
@@ -5,11 +7,6 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../local_assistant/domain/assistant_command.dart';
 import '../domain/pending_operation.dart';
-
-abstract interface class PendingOperationStore {
-  Future<List<PendingOperation>> getOperations();
-  Future<void> saveOperation(PendingOperation operation);
-}
 
 class LocalDatabaseService implements PendingOperationStore {
   static const _databaseName = 'arqnova_mobile.db';
@@ -41,9 +38,15 @@ class LocalDatabaseService implements PendingOperationStore {
       '''),
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) {
-          await db.execute('ALTER TABLE $_table ADD COLUMN intentos INTEGER NOT NULL DEFAULT 0');
-          await db.execute('ALTER TABLE $_table ADD COLUMN ultimo_intento TEXT');
-          await db.execute('ALTER TABLE $_table ADD COLUMN fecha_sincronizacion TEXT');
+          await db.execute(
+            'ALTER TABLE $_table ADD COLUMN intentos INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE $_table ADD COLUMN ultimo_intento TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE $_table ADD COLUMN fecha_sincronizacion TEXT',
+          );
         }
       },
     );
@@ -99,11 +102,13 @@ class LocalDatabaseService implements PendingOperationStore {
             : jsonDecode(row['respuesta_servidor']! as String),
     errorMessage: row['error'] as String?,
     attemptCount: (row['intentos'] as int?) ?? 0,
-    lastAttemptAt: row['ultimo_intento'] == null
-        ? null
-        : DateTime.parse(row['ultimo_intento']! as String),
-    synchronizedAt: row['fecha_sincronizacion'] == null
-        ? null
-        : DateTime.parse(row['fecha_sincronizacion']! as String),
+    lastAttemptAt:
+        row['ultimo_intento'] == null
+            ? null
+            : DateTime.parse(row['ultimo_intento']! as String),
+    synchronizedAt:
+        row['fecha_sincronizacion'] == null
+            ? null
+            : DateTime.parse(row['fecha_sincronizacion']! as String),
   );
 }

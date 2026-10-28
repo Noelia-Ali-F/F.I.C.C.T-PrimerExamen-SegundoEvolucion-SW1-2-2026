@@ -1,3 +1,6 @@
+import '../domain/ports/backend_api_port.dart';
+import '../domain/assistant_api_result.dart';
+export '../domain/assistant_api_result.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
@@ -7,13 +10,14 @@ import 'package:http/http.dart' as http;
 import '../../../core/config/app_config.dart';
 import '../domain/assistant_command.dart';
 
-class GeneratedBackendApi {
+class GeneratedBackendApi implements BackendApiPort {
   GeneratedBackendApi({http.Client? client})
     : _client = client ?? http.Client();
 
   final http.Client _client;
   static const requestTimeout = Duration(seconds: 15);
 
+  @override
   Future<AssistantApiResult> execute(
     AssistantCommand command, {
     String? idempotencyKey,
@@ -30,7 +34,9 @@ class GeneratedBackendApi {
       switch (command.intent) {
         case AssistantIntent.query:
           response = await _client
-              .get(AppConfig.apiUri(resolved == null ? path : '$path/$resolved'))
+              .get(
+                AppConfig.apiUri(resolved == null ? path : '$path/$resolved'),
+              )
               .timeout(requestTimeout);
           break;
         case AssistantIntent.create:
@@ -64,10 +70,7 @@ class GeneratedBackendApi {
             );
           }
           response = await _client
-              .delete(
-                AppConfig.apiUri('$path/$resolved'),
-                headers: headers,
-              )
+              .delete(AppConfig.apiUri('$path/$resolved'), headers: headers)
               .timeout(requestTimeout);
           break;
       }
@@ -185,39 +188,4 @@ class GeneratedBackendApi {
           .replaceAll('ó', 'o')
           .replaceAll('ú', 'u')
           .trim();
-}
-
-class AssistantApiResult {
-  const AssistantApiResult({
-    required this.message,
-    required this.data,
-    required this.statusCode,
-  });
-
-  final String message;
-  final dynamic data;
-  final int statusCode;
-}
-
-class AssistantApiException implements Exception {
-  const AssistantApiException(this.message, {this.statusCode});
-  final String message;
-  final int? statusCode;
-  bool get isTemporary =>
-      statusCode == 408 ||
-      statusCode == 429 ||
-      (statusCode != null && statusCode! >= 500);
-  @override
-  String toString() => message;
-}
-
-class AssistantTemporaryException extends AssistantApiException {
-  const AssistantTemporaryException(super.message) : super(statusCode: 408);
-}
-
-class AssistantOfflineException extends AssistantApiException {
-  const AssistantOfflineException()
-    : super(
-        'Sin conexión. La interpretación local funciona, pero esta operación necesita acceso al backend.',
-      );
 }

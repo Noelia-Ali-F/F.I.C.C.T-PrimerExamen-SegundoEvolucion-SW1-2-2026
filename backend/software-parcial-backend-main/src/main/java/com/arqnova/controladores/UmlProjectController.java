@@ -9,7 +9,7 @@ import com.arqnova.modelo.entidades.ProjectEntity;
 import com.arqnova.modelo.entidades.ProjectMemberRole;
 import com.arqnova.modelo.entidades.ProjectStatus;
 import com.arqnova.modelo.entidades.UmlDiagramEntity;
-import com.arqnova.servicios.persistencia.UmlProjectPersistenceService;
+import com.arqnova.servicios.puertos.entrada.ProjectUseCase;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -35,7 +35,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UmlProjectController {
 
-    private final UmlProjectPersistenceService service;
+    private final ProjectUseCase service;
 
     @GetMapping
     public ApiResponse<List<ProjectResponse>> list(@RequestHeader("X-Usuario") String username) {

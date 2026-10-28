@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../features/local_assistant/data/generated_backend_api.dart';
+import '../features/local_assistant/domain/ports/backend_api_port.dart';
+import '../core/composition/mobile_dependencies.dart';
 import '../features/local_assistant/presentation/assistant_page.dart';
-import '../features/offline_sync/data/sync_service.dart';
+import '../features/offline_sync/presentation/sync_controller.dart';
 import '../features/offline_sync/presentation/pending_operations_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -13,14 +14,16 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late final GeneratedBackendApi _api;
-  late final SyncService _syncService;
+  late final BackendApiPort _api;
+  late final MobileDependencies _dependencies;
+  late final SyncController _syncService;
 
   @override
   void initState() {
     super.initState();
-    _api = GeneratedBackendApi();
-    _syncService = SyncService(api: _api);
+    _dependencies = MobileDependencies.create();
+    _api = _dependencies.api;
+    _syncService = _dependencies.sync;
     _syncService.initialize();
   }
 
@@ -33,7 +36,12 @@ class _HomePageState extends State<HomePage> {
   void _openAssistant() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AssistantPage(api: _api, syncService: _syncService),
+        builder:
+            (_) => AssistantPage(
+              api: _api,
+              syncService: _syncService,
+              speech: _dependencies.createSpeech(),
+            ),
       ),
     );
   }
@@ -143,7 +151,7 @@ class _HomePageState extends State<HomePage> {
 
 class _ConnectionIndicator extends StatelessWidget {
   const _ConnectionIndicator({required this.service});
-  final SyncService service;
+  final SyncController service;
 
   @override
   Widget build(BuildContext context) {
