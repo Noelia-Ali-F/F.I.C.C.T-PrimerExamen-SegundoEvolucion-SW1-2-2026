@@ -9,6 +9,7 @@ import '../../features/offline_sync/application/offline_sync_use_cases.dart';
 import '../../features/offline_sync/presentation/sync_controller.dart';
 
 class MobileDependencies {
+  static SpeechInputPort createSpeechInput() => SpeechToTextAdapter();
   MobileDependencies._(this.api, this.sync, this.createSpeech);
   final BackendApiPort api;
   final SyncController sync;

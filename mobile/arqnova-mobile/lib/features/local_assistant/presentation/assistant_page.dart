@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../domain/ports/backend_api_port.dart';
+import '../../../core/composition/mobile_dependencies.dart';
 import '../domain/ports/speech_input_port.dart';
 import '../domain/assistant_api_result.dart';
 import '../application/assistant_use_cases.dart';
@@ -24,13 +25,13 @@ class AssistantPage extends StatefulWidget {
   const AssistantPage({
     super.key,
     required this.api,
-    required this.speech,
+    this.speech,
     required this.syncService,
     this.intentEngine = const LocalIntentEngine(),
   });
 
   final BackendApiPort api;
-  final SpeechInputPort speech;
+  final SpeechInputPort? speech;
   final SyncController syncService;
   final LocalIntentEngine intentEngine;
 
@@ -40,7 +41,8 @@ class AssistantPage extends StatefulWidget {
 
 class _AssistantPageState extends State<AssistantPage> {
   final _controller = TextEditingController();
-  SpeechInputPort get _speech => widget.speech;
+  late final SpeechInputPort _speech =
+      widget.speech ?? MobileDependencies.createSpeechInput();
   AssistantUseCases get _assistant =>
       AssistantUseCases(api: widget.api, engine: widget.intentEngine);
   _AssistantStatus _status = _AssistantStatus.ready;
