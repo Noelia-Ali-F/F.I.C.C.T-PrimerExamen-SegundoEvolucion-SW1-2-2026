@@ -42,3 +42,9 @@ sudo docker compose -f docker-compose.yml \
 ```
 
 La restauración de imágenes conserva las tablas aditivas y los datos. El disco sigue limitado; antes de nuevas cargas se debe revisar espacio y conservar estos respaldos. La limpieza realizada afectó únicamente cachés regenerables de APT y Maven, sin eliminar datos ni imágenes anteriores.
+
+## Disco ampliado el 2 de noviembre de 2026
+
+El volumen gp3 `vol-08bfd9dfdd1704d35` de la instancia `i-098aace5b0cdfe43a` se amplió de 8 a 20 GiB, conservando 3000 IOPS y 125 MiB/s. Antes se creó la instantánea `snap-07f58130bb799c2c6`, verificada al 100 %, y un nuevo respaldo local PostgreSQL/configuración.
+
+Con el volumen en estado optimizing, se ejecutaron `growpart /dev/nvme0n1 1` y `resize2fs /dev/nvme0n1p1`. Resultado: raíz ext4 de aproximadamente 19 GiB, 6.5 GiB usados y 12 GiB libres (36 % de uso). No se detuvo EC2 ni se recrearon contenedores. Se verificaron backend/PostgreSQL saludables, HTTPS 200 y la misma huella de los nueve diagramas. AWS puede continuar la optimización en segundo plano aunque el espacio ya esté disponible. El volumen ampliado y la instantánea quedan sujetos a la facturación de AWS.
