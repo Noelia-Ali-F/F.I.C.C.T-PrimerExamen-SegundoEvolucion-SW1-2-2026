@@ -1,0 +1,14 @@
+# AWS extension: keep the existing PostgreSQL, volumes and provider configuration.
+# Build images outside EC2, load them, and set SECOND_EXAM_RELEASE to their tag.
+services:
+  backend:
+    image: arqnova-backend:${SECOND_EXAM_RELEASE:?SECOND_EXAM_RELEASE es obligatorio}
+    environment:
+      AI_CONVERSATIONS_ENABLED: "true"
+      AI_MODELING_ENABLED: "true"
+      AI_MEMORY_ENDPOINT: ""
+      AI_MEMORY_TABLE: arqnova-ai-memory
+      AWS_REGION: us-east-2
+      PUSH_NOTIFICATIONS_ENABLED: "false"
+  frontend:
+    image: arqnova-frontend:${SECOND_EXAM_RELEASE:?SECOND_EXAM_RELEASE es obligatorio}
