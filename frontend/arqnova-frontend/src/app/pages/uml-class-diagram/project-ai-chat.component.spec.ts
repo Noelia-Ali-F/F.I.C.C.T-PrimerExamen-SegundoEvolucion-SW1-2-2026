@@ -5,8 +5,8 @@ import { ProjectAiChatComponent } from './project-ai-chat.component';
 import { AiConversationService } from './ai-conversation.service';
 describe('panel de conversación del proyecto',()=>{
  afterEach(()=>TestBed.resetTestingModule());
- function setup(enabled=true){
-  const service={status:vi.fn(()=>of({enabled})),history:vi.fn(()=>of({turns:[],nextCursor:null})),watch:vi.fn(()=>new Subject()),send:vi.fn(()=>throwError(()=>new Error('network')))};
+ function setup(enabled=true,modes:string[]=['ASK','REVIEW']){
+  const service={status:vi.fn(()=>of({enabled,modes})),history:vi.fn(()=>of({turns:[],nextCursor:null})),watch:vi.fn(()=>new Subject()),send:vi.fn(()=>throwError(()=>new Error('network')))};
   TestBed.configureTestingModule({imports:[ProjectAiChatComponent],providers:[{provide:AiConversationService,useValue:service}]});
   const fixture=TestBed.createComponent(ProjectAiChatComponent);fixture.componentRef.setInput('projectId','p');fixture.detectChanges();return{fixture,service,component:fixture.componentInstance};
  }
@@ -20,5 +20,13 @@ describe('panel de conversación del proyecto',()=>{
  it('un mensaje diferente recibe otro identificador',()=>{
   const {component,service}=setup();component.instruction='Primera';component.send();component.instruction='Segunda';component.send();
   expect((service.send.mock.calls[0] as unknown[])[1]).not.toBe((service.send.mock.calls[1] as unknown[])[1]);
+ });
+ it('ofrece modelado únicamente cuando el servidor lo habilita',()=>{
+  const {fixture,component}=setup(true,['ASK','REVIEW','MODEL']);
+  expect(fixture.nativeElement.textContent).toContain('Modificar diagrama guardado');
+  component.mode='MODEL';fixture.changeDetectorRef.markForCheck();fixture.detectChanges();expect(fixture.nativeElement.textContent).toContain('para todo el equipo');
+ });
+ it('muestra un conflicto sin afirmar que el diagrama fue modificado',()=>{
+  const {component}=setup();expect(component.failureText('AI_MODEL_CONFLICT')).toContain('El diagrama cambió');
  });
 });

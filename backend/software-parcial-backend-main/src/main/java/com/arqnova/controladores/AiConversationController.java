@@ -15,7 +15,7 @@ import java.util.Map;
 public class AiConversationController {
     private final AiConversationUseCase service;
     public AiConversationController(AiConversationUseCase service){this.service=service;}
-    @GetMapping("/status") public ApiResponse<Map<String,Object>> status(){return ApiResponse.ok("Conversación IA",Map.of("enabled",service.enabled(),"modes",new String[]{"ASK","REVIEW"}));}
+    @GetMapping("/status") public ApiResponse<Map<String,Object>> status(){return ApiResponse.ok("Conversación IA",Map.of("enabled",service.enabled(),"modes",service.modelingEnabled()?new String[]{"ASK","REVIEW","MODEL"}:new String[]{"ASK","REVIEW"}));}
     @GetMapping("/messages") public ApiResponse<Page> history(@PathVariable String projectId,Principal principal,
             @RequestParam(required=false)String cursor,@RequestParam(defaultValue="20")int limit){
         return ApiResponse.ok("Conversación del proyecto",service.history(projectId,principal.getName(),cursor,limit));

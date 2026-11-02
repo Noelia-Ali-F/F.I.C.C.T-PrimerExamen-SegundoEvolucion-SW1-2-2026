@@ -1,3 +1,5 @@
+import { Subscription } from 'rxjs';
+import { AiConversationService } from './ai-conversation.service';
 import { ProjectAiChatComponent } from './project-ai-chat.component';
 import * as diagramRules from '../../domain/uml/diagram-rules';
 import { CommonModule } from '@angular/common';
@@ -25,6 +27,12 @@ interface AiHistoryItem { instruction: string; message: string; kind: 'success' 
   styleUrls: ['./uml-class-diagram.component.scss', './uml-backend-generator.scss', './uml-toolbar-tooltips.scss']
 })
 export class UmlClassDiagramComponent implements OnDestroy {
+  private readonly teamAi = inject(AiConversationService);
+  private readonly teamAiSubscriptions = new Subscription();
+  private teamAiWatching = false;
+  private canonicalRefreshing = false;
+  private localModelDirty = false;
+  private canonicalRefreshAgain = false;
   private readonly backendGenerator = inject(UmlBackendGeneratorService);
   private readonly flutterGenerator = inject(UmlFlutterGeneratorService);
   private readonly xmi = inject(UmlXmiService);
@@ -163,6 +171,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
         this.model.set(this.normalizeModel(project.model));
         this.lastSavedAt.set(new Date(project.updatedAt));
         this.status.set('Proyecto cargado desde PostgreSQL');
+        this.watchTeamModeling();
         if (this.route.snapshot.queryParamMap.get('collaborate') === '1') this.startCollaboration();
       },
       error: () => {
@@ -173,7 +182,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     });
   }
 
-  ngOnDestroy() { window.clearInterval(this.lockRenewTimer);if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);this.voiceCaptureActive=false;this.voice.stop(); this.collaboration.disconnect(); this.revokeImagePreview(); }
+  ngOnDestroy() { this.teamAiSubscriptions.unsubscribe();window.clearInterval(this.lockRenewTimer);if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);this.voiceCaptureActive=false;this.voice.stop(); this.collaboration.disconnect(); this.revokeImagePreview(); }
 
   openBackendGenerator() {
     const base=this.safeTitle()||'uml-backend';
@@ -513,8 +522,29 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private executeAiCommands(commands:UmlAiCommand[],index:number,done:()=>void){if(index>=commands.length){done();return;}this.executeAiCommand(commands[index],()=>this.executeAiCommands(commands,index+1,done));}
   private finishAi(instruction:string,message:string,kind:'success'|'error'|'clarification'){this.aiResult.set({kind,text:message});this.aiHistory.update(items=>[{instruction,message,kind,at:new Date()},...items].slice(0,12));if(kind==='success')this.showNotice('success',message);}
 
+  private watchTeamModeling(){
+    if(this.teamAiWatching)return;this.teamAiWatching=true;
+    this.teamAiSubscriptions.add(this.teamAi.status(this.projectId).subscribe({next:status=>{
+      if(!status.enabled||!status.modes?.includes('MODEL'))return;
+      this.teamAiSubscriptions.add(this.teamAi.watch(this.projectId).subscribe(change=>{
+        if(change.state==='CONNECTED'||(change.mode==='MODEL'&&change.state==='COMPLETED'))this.refreshCanonicalModel();
+      }));
+    },error:()=>{}}));
+  }
+  private refreshCanonicalModel(){
+    if(this.canonicalRefreshing){this.canonicalRefreshAgain=true;return;}
+    if(this.localModelDirty||this.pendingSaveMessage||this.saveInFlight||this.dragging||this.dragCandidate){this.status.set('El equipo actualizó el diagrama. Conserva tu edición local y recarga antes de guardar.');return;}
+    const original=this.model();const clean=()=>this.model()===original&&!this.localModelDirty&&!this.pendingSaveMessage&&!this.saveInFlight&&!this.dragging&&!this.dragCandidate;
+    this.canonicalRefreshing=true;
+    this.teamAiSubscriptions.add(this.projectStore.get(this.projectId,clean).subscribe({next:project=>{
+      this.canonicalRefreshing=false;
+      if(clean()){this.model.set(this.normalizeModel(project.model));this.lastSavedAt.set(new Date(project.updatedAt));this.status.set('Diagrama sincronizado con el equipo');}
+      else this.status.set('Hay cambios del equipo. Tu edición local se conserva; recarga antes de guardar.');
+      if(this.canonicalRefreshAgain){this.canonicalRefreshAgain=false;this.refreshCanonicalModel();}
+    },error:()=>{this.canonicalRefreshing=false;this.canonicalRefreshAgain=false;this.status.set('No se pudo recuperar el diagrama actualizado. Tu copia local se conserva.');}}));
+  }
   private updateModel(model:UmlDiagramModel,message:string,type?:string,elementId?:string,element?:unknown,elementType?:UmlLockElementType){this.model.set(model);this.persist(message);if(type&&elementId)this.broadcast(type,elementId,element,message,elementType);}
-  private persist(message:string){const now=new Date();const model={...this.model(),updatedAt:now.toISOString()};this.model.set(model);this.projectStore.cacheModel(this.projectId,model);this.pendingSaveMessage=message;if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);if(!this.saveInFlight)this.saveTimer=window.setTimeout(()=>this.flushPersist(),350);}
+  private persist(message:string){this.localModelDirty=true;const now=new Date();const model={...this.model(),updatedAt:now.toISOString()};this.model.set(model);this.projectStore.cacheModel(this.projectId,model);this.pendingSaveMessage=message;if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);if(!this.saveInFlight)this.saveTimer=window.setTimeout(()=>this.flushPersist(),350);}
   private flushPersist() {
     if (this.saveInFlight || !this.pendingSaveMessage) return;
     const message = this.pendingSaveMessage;
@@ -528,6 +558,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
       next: project => {
         this.lastSavedAt.set(new Date(project.updatedAt));
         this.status.set(message);
+        this.localModelDirty = this.pendingSaveMessage !== null;
         this.saveInFlight = false;
         if (explicit) {
           this.releaseOwnedLocks();
@@ -546,7 +577,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     });
   }
   private joinByInvitation(code:string){this.collaboration.join(code).subscribe({next:session=>{const model=this.normalizeModel(session.model);this.model.set(model);this.projectStore.upsertCollaborative(session.projectId,session.projectName,model);this.lastSavedAt.set(new Date(model.updatedAt||Date.now()));this.activateSession(session);},error:()=>{this.showNotice('error','La invitación no existe o ya no está activa.');this.router.navigate(['/proyectos']);}});}
-  private activateSession(session:UmlSession){this.collaborativeSession.set(session);this.status.set('Sesión colaborativa activa');this.activity.set([]);this.collaboration.activities(session.sessionId).subscribe({next:history=>this.activity.update(live=>{const ids=new Set(live.map(item=>item.eventId));return [...live,...history.filter(item=>!ids.has(item.eventId))].sort((a,b)=>(b.timestamp??0)-(a.timestamp??0)).slice(0,100);}),error:()=>{}});this.collaboration.connect(session,event=>this.handleLiveEvent(event));}
+  private activateSession(session:UmlSession){this.watchTeamModeling();this.collaborativeSession.set(session);this.status.set('Sesión colaborativa activa');this.activity.set([]);this.collaboration.activities(session.sessionId).subscribe({next:history=>this.activity.update(live=>{const ids=new Set(live.map(item=>item.eventId));return [...live,...history.filter(item=>!ids.has(item.eventId))].sort((a,b)=>(b.timestamp??0)-(a.timestamp??0)).slice(0,100);}),error:()=>{}});this.collaboration.connect(session,event=>this.handleLiveEvent(event));}
   private broadcast(type:string,elementId:string,element:unknown,operation:string,elementType?:UmlLockElementType){const session=this.collaborativeSession();if(!session)return;this.collaboration.publish({type,projectId:this.projectId,elementId,elementType:elementType??(type.startsWith('relation:')?'relation':'class'),operation,data:{element}});}
   private broadcastAttribute(type:'attribute:create'|'attribute:update'|'attribute:delete',classId:string,attributeId:string,attribute?:UmlAttribute){if(!this.collaborativeSession())return;this.collaboration.publish({type,projectId:this.projectId,elementId:attributeId,elementType:'attribute',operation:type==='attribute:create'?'creó un atributo':type==='attribute:delete'?'eliminó un atributo':'actualizó un atributo',data:{classId,attributeId,...(attribute?{attribute}:{})}});}
   private announceAction(elementId:string,operation:string,action:string){const session=this.collaborativeSession();if(!session)return;this.collaboration.publish({type:'participant:editing',projectId:this.projectId,elementId,operation,data:{element:{action}}});}

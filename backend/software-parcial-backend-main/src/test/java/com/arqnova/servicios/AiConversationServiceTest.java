@@ -86,6 +86,36 @@ class AiConversationServiceTest {
         service.send("p","a","request-001",Mode.ASK,"Hola");
         assertThat(service.get("p","a","request-001").errorCode()).isEqualTo("AI_QUEUE_BUSY");
     }
+    @Test void modelingAppliesOnceAndPublishesResultingVersion()throws Exception{
+        var mutations=mock(AiModelMutationPort.class);when(mutations.enabled()).thenReturn(true);
+        var op=com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_CREATE").parameters(Map.of("name","Cliente")).build();
+        var answer=new Answer("Cambio aplicado",List.of(),"FAKE","test",List.of(op));when(provider.answer(any(),any())).thenReturn(answer);
+        when(mutations.apply(any(),any(),any())).thenReturn(new AiModelMutationPort.Applied(answer,6));
+        service=new AiConversationService(memory,provider,events::add,queue::add,projects,users,clock,mutations);
+        service.send("p","a","model-001",Mode.MODEL,"Crea Cliente");queue.get(0).run();
+        service.send("p","a","model-001",Mode.MODEL,"Crea Cliente");
+        assertThat(service.get("p","a","model-001").diagramVersion()).isEqualTo(6);
+        verify(mutations,times(1)).apply(any(),any(),any());verify(provider,times(1)).answer(any(),any());
+        assertThat(events.get(events.size()-1).mode()).isEqualTo(Mode.MODEL);
+    }
+    @Test void modelConflictIsReportedWithoutApplyingAgain()throws Exception{
+        var mutations=mock(AiModelMutationPort.class);when(mutations.enabled()).thenReturn(true);
+        var answer=new Answer("Cambio",List.of(),"FAKE","test",List.of(com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_CREATE").parameters(Map.of("name","Cliente")).build()));
+        when(provider.answer(any(),any())).thenReturn(answer);when(mutations.apply(any(),any(),any())).thenThrow(new DuplicateResourceException("Versión diferente"));
+        service=new AiConversationService(memory,provider,events::add,queue::add,projects,users,clock,mutations);
+        service.send("p","a","model-002",Mode.MODEL,"Crea Cliente");queue.get(0).run();
+        assertThat(service.get("p","a","model-002").errorCode()).isEqualTo("AI_MODEL_CONFLICT");
+    }
+    @Test void modelingRemainsDisabledUnlessExplicitlyConfigured(){
+        assertThatThrownBy(()->service.send("p","a","model-003",Mode.MODEL,"Crea Cliente")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(memory.data).isEmpty();assertThat(queue).isEmpty();
+    }
+    @Test void clarificationCompletesWithoutWritingDiagram()throws Exception{
+        var mutations=mock(AiModelMutationPort.class);when(mutations.enabled()).thenReturn(true);
+        service=new AiConversationService(memory,provider,events::add,queue::add,projects,users,clock,mutations);
+        service.send("p","a","model-004",Mode.MODEL,"Crea algo");queue.get(0).run();
+        verify(mutations,never()).apply(any(),any(),any());assertThat(service.get("p","a","model-004").state()).isEqualTo(State.COMPLETED);
+    }
     static class Memory implements AiMemoryPort{
         boolean enabled=true;Map<String,Turn> data=new LinkedHashMap<>();
         String key(String p,String r){return p+":"+r;}

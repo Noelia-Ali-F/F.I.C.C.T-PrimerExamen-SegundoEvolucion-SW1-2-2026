@@ -31,6 +31,7 @@ logging:
 app:
   ai:
     conversations:
+      modeling-enabled: ${AI_MODELING_ENABLED:false}
       enabled: ${AI_CONVERSATIONS_ENABLED:false}
       table: ${AI_MEMORY_TABLE:arqnova-ai-memory}
       region: ${AWS_REGION:us-east-2}

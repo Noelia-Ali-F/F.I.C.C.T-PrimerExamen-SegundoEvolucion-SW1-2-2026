@@ -18,7 +18,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
         @for(turn of turns();track turn.requestId){
           <article>
             <header><strong>{{turn.authorName}}</strong><time>{{turn.createdAt|date:'short'}}</time></header>
-            <span class="chat-mode">{{turn.mode==='REVIEW'?'Revisión UML':'Consulta'}}</span>
+            <span class="chat-mode">{{turn.mode==='MODEL'?'Modelado UML':turn.mode==='REVIEW'?'Revisión UML':'Consulta'}}</span>
             <p class="question">{{turn.instruction}}</p>
             @if(turn.state==='PENDING'){<p class="pending">La IA está preparando la respuesta…</p>}
             @else if(turn.state==='FAILED'){<p class="chat-error">{{failureText(turn.errorCode)}}</p>}
@@ -32,7 +32,8 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
         }
       </div>
       <form (ngSubmit)="send()">
-        <label>Acción<select [(ngModel)]="mode" name="mode"><option value="ASK">Consultar a la IA</option><option value="REVIEW">Revisar diagrama</option></select></label>
+        <label>Acción<select [(ngModel)]="mode" name="mode"><option value="ASK">Consultar a la IA</option><option value="REVIEW">Revisar diagrama</option>@if(modelingEnabled()){<option value="MODEL">Modificar diagrama guardado</option>}</select></label>
+        @if(mode==='MODEL'){<p>La solicitud se aplicará al diagrama guardado para todo el equipo. Guarda y termina las ediciones manuales antes de enviarla.</p>}
         <textarea name="instruction" [(ngModel)]="instruction" maxlength="4000" rows="3" placeholder="Escribe tu consulta para el equipo" aria-label="Mensaje para la conversación compartida"></textarea>
         <button type="submit" [disabled]="sending()||!instruction.trim()">{{sending()?'Registrando…':'Enviar al equipo'}}</button>
       </form>
@@ -45,10 +46,10 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   private readonly service=inject(AiConversationService);
   private subscriptions=new Subscription();private poll?:ReturnType<typeof setInterval>;private refreshing=false;private refreshAgain=false;private historyLoaded=false;
   private loadingTurns=new Set<string>();
-  enabled=signal(false);loading=signal(true);sending=signal(false);error=signal('');turns=signal<AiTurn[]>([]);cursor=signal<string|null>(null);loadingOlder=signal(false);
+  modelingEnabled=signal(false);enabled=signal(false);loading=signal(true);sending=signal(false);error=signal('');turns=signal<AiTurn[]>([]);cursor=signal<string|null>(null);loadingOlder=signal(false);
   mode:AiConversationMode='ASK';instruction='';private requestId:string|null=null;private requestContent='';
   ngOnInit(){this.subscriptions.add(this.service.status(this.projectId).subscribe({next:status=>{
-    this.enabled.set(status.enabled);this.loading.set(false);
+    this.modelingEnabled.set(status.modes?.includes('MODEL')===true);this.enabled.set(status.enabled);this.loading.set(false);
     if(!status.enabled){this.error.set('La conversación compartida todavía no está habilitada. Puedes seguir usando Editar diagrama.');return;}
     this.refresh();this.subscriptions.add(this.service.watch(this.projectId).subscribe(change=>change.requestId?this.loadTurn(change.requestId):this.refresh()));
     this.poll=setInterval(()=>this.turns().filter(t=>t.state==='PENDING').slice(0,4).forEach(turn=>this.loadTurn(turn.requestId)),4000);
@@ -71,5 +72,5 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
       this.turns.update(turns=>mergeAiTurns(turns,[turn]));this.instruction='';this.requestId=null;this.sending.set(false);this.refresh();
     },error:()=>{this.sending.set(false);this.error.set('No se confirmó el envío. Vuelve a enviar el mismo mensaje para comprobarlo sin duplicarlo.');}}));
   }
-  failureText(code:string|null){switch(code){case'AI_CONTEXT_TOO_LARGE':return'El diagrama supera el contexto permitido para esta consulta. El modelo guardado se conserva.';case'AI_RATE_LIMITED':return'La IA alcanzó temporalmente su cuota. Intenta una nueva consulta más tarde.';case'AI_REQUEST_INTERRUPTED':return'La solicitud se interrumpió. Puedes enviar una nueva consulta.';case'AI_QUEUE_BUSY':return'Hay varias solicitudes en espera. Intenta más tarde.';case'ACCESS_CHANGED':return'El acceso al proyecto cambió durante la solicitud.';default:return'El proveedor de IA no pudo completar esta respuesta. El diagrama no fue modificado.';}}
+  failureText(code:string|null){switch(code){case'AI_MODEL_CONFLICT':return'El diagrama cambió o un elemento está en edición. Revisa la versión guardada antes de enviar otra solicitud.';case'AI_INVALID_OPERATIONS':return'La solicitud no produjo un lote UML válido. No se aplicaron cambios.';case'AI_CONTEXT_TOO_LARGE':return'El diagrama supera el contexto permitido para esta consulta. El modelo guardado se conserva.';case'AI_RATE_LIMITED':return'La IA alcanzó temporalmente su cuota. Intenta una nueva consulta más tarde.';case'AI_REQUEST_INTERRUPTED':return'La solicitud se interrumpió. Puedes enviar una nueva consulta.';case'AI_QUEUE_BUSY':return'Hay varias solicitudes en espera. Intenta más tarde.';case'ACCESS_CHANGED':return'El acceso al proyecto cambió durante la solicitud.';default:return'El proveedor de IA no pudo completar esta respuesta. El diagrama no fue modificado.';}}
 }

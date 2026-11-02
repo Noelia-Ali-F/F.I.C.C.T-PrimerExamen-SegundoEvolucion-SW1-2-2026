@@ -42,6 +42,15 @@ describe('UmlProjectStoreService PostgreSQL', () => {
     http.expectOne(`${api}/vet/diagram`).flush({datos:{projectId:'vet',modelVersion:4,model:{...DEFAULT_UML_MODEL,title:'Veterinaria',classes:[]}}});
     const project=await promise;expect(project.id).toBe('vet');expect(project.model.classes).toHaveLength(0);expect(project.modelVersion).toBe(4);
   });
+  it('no cambia la cache ni su version si aparece una edición local durante la sincronización',async()=>{
+    const first=firstValueFrom(store.get('vet'));
+    http.expectOne(`${api}/vet`).flush({datos:dto('vet','Veterinaria')});
+    http.expectOne(`${api}/vet/diagram`).flush({datos:{projectId:'vet',modelVersion:4,model:{...DEFAULT_UML_MODEL,title:'Local',classes:[]}}});await first;
+    let clean=true;const pending=firstValueFrom(store.get('vet',()=>clean));clean=false;
+    http.expectOne(`${api}/vet`).flush({datos:dto('vet','Veterinaria')});
+    http.expectOne(`${api}/vet/diagram`).flush({datos:{projectId:'vet',modelVersion:5,model:{...DEFAULT_UML_MODEL,title:'Remoto',classes:[]}}});
+    expect((await pending).modelVersion).toBe(5);expect(store.cached('vet')?.modelVersion).toBe(4);expect(store.cached('vet')?.model.title).toBe('Veterinaria');
+  });
 
   it('migra legacy una vez preservando projectId y modelo',async()=>{
     const legacy:UmlProject={id:'legacy-veterinaria',name:'Veterinaria',description:'',status:'EN_EDICION',createdAt:'2026-01-01',updatedAt:'2026-01-01',model:{...DEFAULT_UML_MODEL,title:'Veterinaria',classes:[{...DEFAULT_UML_MODEL.classes[0],id:'mascota',name:'Mascota'}]},modelVersion:0};

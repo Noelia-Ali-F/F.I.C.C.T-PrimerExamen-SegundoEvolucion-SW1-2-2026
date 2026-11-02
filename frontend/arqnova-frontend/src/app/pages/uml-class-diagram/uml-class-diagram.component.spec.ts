@@ -33,6 +33,25 @@ describe('UmlClassDiagramComponent', () => {
     component.model.set({ format: 'uml-class-diagram', version: 2, title: 'Prueba', classes: [], relations: [] });
   });
 
+  it('recupera el modelo aplicado por IA sin volver a guardar ni ejecutar sus operaciones', () => {
+    const events=new Subject<any>();
+    (component as any).teamAi={status:()=>of({enabled:true,modes:['ASK','REVIEW','MODEL']}),watch:()=>events};
+    const store=TestBed.inject(UmlProjectStoreService);
+    const remote={...DEFAULT_UML_MODEL,title:'Modelo remoto',classes:[]};
+    const get=vi.spyOn(store,'get').mockReturnValue(of({id:'project-test',name:'Modelo remoto',description:'',status:'EN_EDICION',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),model:remote,modelVersion:2}));
+    const save=vi.spyOn(store,'saveModel');
+    (component as any).watchTeamModeling();events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
+    expect(get).toHaveBeenCalledTimes(1);expect(component.model().title).toBe('Modelo remoto');expect(save).not.toHaveBeenCalled();
+  });
+  it.each(['pendiente','fallida'])('conserva una edición local %s al recibir una modificación de IA del equipo', state => {
+    const events=new Subject<any>();
+    (component as any).teamAi={status:()=>of({enabled:true,modes:['MODEL']}),watch:()=>events};
+    const get=vi.spyOn(TestBed.inject(UmlProjectStoreService),'get');const original=component.model();
+    if(state==='pendiente')(component as any).pendingSaveMessage='Edición local';else (component as any).localModelDirty=true;
+    (component as any).watchTeamModeling();
+    events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
+    expect(get).not.toHaveBeenCalled();expect(component.model()).toBe(original);expect(component.status()).toContain('Conserva tu edición local');
+  });
   it('CU9 muestra la opción para generar backend Spring Boot y abre su configuración', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Generar Backend');

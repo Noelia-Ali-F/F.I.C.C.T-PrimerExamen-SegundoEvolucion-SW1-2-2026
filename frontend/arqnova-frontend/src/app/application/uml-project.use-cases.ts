@@ -56,14 +56,14 @@ export class UmlProjectUseCases {
     );
   }
 
-  get(id: string): Observable<UmlProject> {
+  get(id: string, cacheIf: () => boolean = () => true): Observable<UmlProject> {
     return forkJoin({
       project: this.repository.project(id),
       diagram: this.repository.diagram(id),
     }).pipe(
       map(({ project, diagram }) => {
         const value = this.fromDto(project.datos, diagram.datos.model, diagram.datos.modelVersion);
-        this.putCache(value);
+        if (cacheIf()) this.putCache(value);
         return value;
       }),
     );

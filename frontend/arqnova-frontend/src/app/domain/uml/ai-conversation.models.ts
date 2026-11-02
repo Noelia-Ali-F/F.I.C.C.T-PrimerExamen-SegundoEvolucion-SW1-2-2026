@@ -1,4 +1,4 @@
-export type AiConversationMode = 'ASK' | 'REVIEW';
+export type AiConversationMode = 'ASK' | 'REVIEW' | 'MODEL';
 export type AiTurnState = 'PENDING' | 'COMPLETED' | 'FAILED';
 export interface AiFinding { severity: 'INFO' | 'WARNING' | 'ERROR'; elementId: string | null; message: string; }
 export interface AiTurn {
@@ -8,4 +8,4 @@ export interface AiTurn {
   errorCode: string | null; diagramVersion: number; createdAt: string; updatedAt: string;
 }
 export interface AiConversationPage { turns: AiTurn[]; nextCursor: string | null; }
-export interface AiConversationChange { projectId: string; requestId?: string; state: AiTurnState | 'CONNECTED'; }
+export interface AiConversationChange { projectId: string; requestId?: string; state: AiTurnState | 'CONNECTED'; mode?: AiConversationMode; diagramVersion?: number; }

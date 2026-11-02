@@ -30,4 +30,12 @@ class PipelineConversationAdapterTest {
         var prompt=org.mockito.ArgumentCaptor.forClass(String.class);verify(pipeline).generateConversation(prompt.capture(),anyMap(),anyInt());
         assertThat(prompt.getValue()).contains("Cliente").doesNotContain("12345","98765");
     }
+    @Test void modelingReusesEstablishedInterpreterAndKeepsOperationsForServerValidation()throws Exception{
+        var interpreter=mock(com.arqnova.servicios.UmlAiCommandService.class);
+        var operation=com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_CREATE").parameters(Map.of("name","Cliente")).build();
+        when(interpreter.interpret(any())).thenReturn(com.arqnova.modelo.dto.response.UmlAiCommandResponse.builder().status("READY").message("Crear Cliente").interpreter("DETERMINISTIC_FALLBACK").operations(List.of(operation)).build());
+        var original=turn();var request=new Turn(original.requestId(),"p","noelia","Noelia",Mode.MODEL,"Crea Cliente",State.PENDING,null,null,3,original.createdAt(),original.updatedAt());
+        var result=new PipelineConversationAdapter(pipeline,new ObjectMapper(),interpreter).answer(request,context(Map.of("classes",List.of(),"relations",List.of())));
+        assertThat(result.operations()).containsExactly(operation);verifyNoInteractions(pipeline);
+    }
 }

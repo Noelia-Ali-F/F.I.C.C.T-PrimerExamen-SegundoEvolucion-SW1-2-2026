@@ -19,6 +19,11 @@ import java.util.concurrent.*;
 
 @Configuration
 public class AiMemoryConfiguration {
+    @Bean @Profile("dynamodb") AiModelMutationPort unavailableDynamoModeling(){return new AiModelMutationPort(){
+        public boolean enabled(){return false;}
+        public Optional<Applied> find(Turn turn){return Optional.empty();}
+        public Applied apply(Turn turn,Context context,Answer answer){throw new IllegalArgumentException("Modelado compartido no disponible en este perfil");}
+    };}
     @Bean(destroyMethod="close") @ConditionalOnProperty(name="app.ai.conversations.enabled",havingValue="true")
     DynamoAiMemoryAdapter aiMemory(ObjectMapper json,@Value("${app.ai.conversations.table:arqnova-ai-memory}") String table,
             @Value("${app.ai.conversations.region:us-east-2}") String region,@Value("${app.ai.conversations.endpoint:}") String endpoint){
