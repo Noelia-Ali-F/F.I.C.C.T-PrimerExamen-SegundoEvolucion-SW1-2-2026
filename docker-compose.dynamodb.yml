@@ -8,6 +8,9 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod,dynamodb
+      AI_CONVERSATIONS_ENABLED: ${AI_CONVERSATIONS_ENABLED:-false}
+      AI_MEMORY_TABLE: ${AI_MEMORY_TABLE:-arqnova-ai-memory}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?AUTH_TOKEN_SECRET es obligatorio}
       GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
       GEMINI_API_KEY_2: ${GEMINI_API_KEY_2:-}
@@ -23,7 +26,6 @@ services:
       OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-6.1-sol}
       OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-low}
       PORT: 8080
-      AWS_REGION: ${AWS_REGION:-us-east-2}
       DYNAMODB_TABLE: ${DYNAMODB_TABLE:-arqnova}
       DYNAMODB_ENDPOINT: ""
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081}

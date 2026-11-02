@@ -2,19 +2,19 @@
 
 **ArqNova** es una plataforma de modelado UML colaborativo con edición en tiempo real, inteligencia artificial, interoperabilidad con Enterprise Architect y generación de software. Incluye editor web, backend, PostgreSQL y aplicación Android.
 
-El proyecto continúa en el **segundo examen de Software I**. **Todo lo implementado hasta ahora corresponde al primer examen; todavía no hay funcionalidades implementadas del segundo examen.**
+El proyecto continúa en el **segundo examen de Software I**. La base del primer examen se conserva y comienza la implementación incremental de los once casos de uso del segundo examen. El estado por caso y la activación pendiente se documentan en [docs/segundo-examen.md](docs/segundo-examen.md).
 
-## Migración de la base de datos a DynamoDB
+## Persistencia NoSQL para el segundo examen
 
-Se incorporó el adaptador NoSQL de **Amazon DynamoDB** conservando la arquitectura hexagonal y las cuatro capas. La activación en AWS requiere crear la tabla, asociar un rol IAM y verificar la copia de los datos. **Actualizar el código no cambia automáticamente la base de producción**, que continúa en PostgreSQL hasta completar ese paso.
+El CU8 del segundo examen requiere NoSQL para conversaciones y contexto de IA. La ampliación utiliza una tabla DynamoDB independiente y **mantiene PostgreSQL para el sistema existente**. El módulo nuevo está desactivado por defecto hasta verificar su configuración en AWS.
 
-La configuración, la plantilla de AWS y el procedimiento de migración/reversión están en [docs/dynamodb.md](docs/dynamodb.md). La aplicación web y sus contratos REST/WebSocket se conservan.
+La adaptación anterior para migrar toda la base sigue disponible como opción técnica, pero no es necesaria para esta entrega ni está activada. Ver [segundo examen](docs/segundo-examen.md) y [adaptación general anterior](docs/dynamodb.md).
 
 ## Contenido
 
 - [Estado de las entregas](#estado-de-las-entregas)
 - [Primer examen: funcionalidades implementadas](#primer-examen-funcionalidades-implementadas)
-- [Segundo examen: pendiente de implementación](#segundo-examen-pendiente-de-implementación)
+- [Segundo examen: implementación incremental](#segundo-examen-implementación-incremental)
 - [Arquitectura general](#arquitectura-general)
 - [Backend en cuatro capas](#backend-en-cuatro-capas)
 - [Stack tecnológico](#stack-tecnológico)
@@ -32,7 +32,7 @@ La configuración, la plantilla de AWS y el procedimiento de migración/reversi�
 | Etapa | Estado | Contenido |
 |---|---|---|
 | Primer examen | Implementado | Funcionalidades existentes, documentación y ajustes del sistema actual |
-| Segundo examen | Sin funcionalidades implementadas | Espacio reservado para documentar los nuevos requisitos, su implementación y sus pruebas |
+| Segundo examen | En implementación | Primera entrega técnica: conversaciones compartidas, contexto reciente, consultas/revisión e historial en NoSQL; ampliaciones UML y móvil pendientes |
 
 ## Primer examen: funcionalidades implementadas
 
@@ -204,11 +204,11 @@ Esta sección reúne el alcance existente del primer examen. Los ajustes de IA, 
 
 </details>
 
-## Segundo examen: pendiente de implementación
+## Segundo examen: implementación incremental
 
-**Estado actual: todavía no se implementó ninguna funcionalidad del segundo examen.**
+La primera entrega técnica añade conversaciones compartidas con persistencia NoSQL, contexto reciente y modos de consulta/revisión. Su activación en AWS está pendiente de configurar y verificar la memoria. La edición UML del flujo nuevo y los casos móviles continúan pendientes.
 
-Esta sección se completará a medida que avancemos. Para cada nueva funcionalidad se documentarán:
+El detalle por caso de uso y sus pruebas está en [docs/segundo-examen.md](docs/segundo-examen.md). Para cada nueva funcionalidad se documentan:
 
 - El requisito y su objetivo.
 - El estado: pendiente, en desarrollo o implementado.

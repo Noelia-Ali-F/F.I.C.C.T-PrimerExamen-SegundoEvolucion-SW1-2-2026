@@ -69,6 +69,10 @@
 
   @if(aiPanelOpen()){<aside class="ai-panel" aria-label="Asistente IA para el diagrama">
     <header><div><span class="ai-symbol"><mat-icon>auto_awesome</mat-icon></span><div><h2>Asistente IA</h2><p>Edita elementos puntuales del diagrama</p></div></div><button type="button" aria-label="Cerrar asistente" (click)="aiPanelOpen.set(false)"><mat-icon>close</mat-icon></button></header>
+    <div class="ai-tabs"><button type="button" [class.active]="aiWorkspace()==='edit'" (click)="aiWorkspace.set('edit')">Editar diagrama</button><button type="button" [class.active]="aiWorkspace()==='team'" (click)="aiWorkspace.set('team')">Chat de equipo</button></div>
+    @if(aiWorkspace()==='team'){
+      <app-project-ai-chat [projectId]="projectId" />
+    }@else{
     <div class="ai-tabs"><button type="button" [class.active]="aiMode()==='text'" (click)="setAiMode('text')"><mat-icon>chat_bubble_outline</mat-icon>Texto</button><button type="button" [class.active]="aiMode()==='voice'" (click)="setAiMode('voice')"><mat-icon>mic_none</mat-icon>Voz</button></div>
     <div class="ai-body">
       @if(aiMode()==='text'){
@@ -81,6 +85,7 @@
       @if(aiHistory().length){<section class="ai-history"><div><strong>Historial</strong><button type="button" (click)="clearAiHistory()">Limpiar</button></div>@for(entry of aiHistory();track entry.at){<article [class.error]="entry.kind==='error'"><mat-icon>{{entry.kind==='success'?'check_circle':'info'}}</mat-icon><div><strong>{{entry.instruction}}</strong><p>{{entry.message}}</p><small>{{entry.at|date:'shortTime'}}</small></div></article>}</section>}
     </div>
     <footer><textarea rows="2" [ngModel]="aiInstruction()" (ngModelChange)="aiInstruction.set($event)" (keydown.control.enter)="sendAiInstruction()" placeholder="Escribe una instrucción, por ejemplo: Crea una clase Cliente"></textarea><button type="button" [disabled]="aiBusy()||!aiInstruction().trim()" (click)="sendAiInstruction()" aria-label="Enviar instrucción"><mat-icon>{{aiBusy()?'hourglass_top':'send'}}</mat-icon></button><small>Ctrl + Enter para enviar · La edición manual sigue disponible</small></footer>
+    }
   </aside>}
 
   @if(imageModalOpen()){<div class="modal-backdrop" (click)="closeImageGenerator()"><div class="image-modal" role="dialog" aria-modal="true" aria-labelledby="image-modal-title" (click)="$event.stopPropagation()">

@@ -29,6 +29,12 @@ logging:
 
 # Custom application properties
 app:
+  ai:
+    conversations:
+      enabled: ${AI_CONVERSATIONS_ENABLED:false}
+      table: ${AI_MEMORY_TABLE:arqnova-ai-memory}
+      region: ${AWS_REGION:us-east-2}
+      endpoint: ${AI_MEMORY_ENDPOINT:}
   avatars:
     dir: ./uploads/avatars
   cors:

@@ -29,6 +29,9 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      AI_CONVERSATIONS_ENABLED: ${AI_CONVERSATIONS_ENABLED:-false}
+      AI_MEMORY_TABLE: ${AI_MEMORY_TABLE:-arqnova-ai-memory}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?AUTH_TOKEN_SECRET es obligatorio}
       GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
       GEMINI_API_KEY_2: ${GEMINI_API_KEY_2:-}

@@ -1,3 +1,4 @@
+import { ProjectAiChatComponent } from './project-ai-chat.component';
 import * as diagramRules from '../../domain/uml/diagram-rules';
 import { CommonModule } from '@angular/common';
 import { Component, ElementRef, HostListener, OnDestroy, ViewChild, computed, effect, signal, inject } from '@angular/core';
@@ -19,7 +20,7 @@ interface AiHistoryItem { instruction: string; message: string; kind: 'success' 
 
 @Component({
   selector: 'app-uml-class-diagram', standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule],
+  imports: [CommonModule, FormsModule, MatIconModule, ProjectAiChatComponent],
   templateUrl: './uml-class-diagram.component.html',
   styleUrls: ['./uml-class-diagram.component.scss', './uml-backend-generator.scss', './uml-toolbar-tooltips.scss']
 })
@@ -57,7 +58,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   exportXmi(){try{this.download(`${this.safeTitle()}-EA.xmi`,this.xmi.serialize(this.model()),'application/xml');this.status.set('XMI para Enterprise Architect exportado');}catch(error){this.showNotice('error',error instanceof Error?error.message:'No se pudo exportar XMI.');}}
   @ViewChild('canvas', { static: true }) canvas!: ElementRef<HTMLElement>;
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
-  private readonly projectId: string;
+  readonly projectId: string;
   readonly canvasWidth = 1500;
   readonly canvasHeight = 900;
   readonly cardWidth = 270;
@@ -85,6 +86,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   pendingLock = signal<string | null>(null);
   collaborationError = signal('');
   aiPanelOpen = signal(false);
+  aiWorkspace = signal<'edit'|'team'>('edit');
   aiMode = signal<'text' | 'voice'>('text');
   aiInstruction = signal('');
   aiBusy = signal(false);

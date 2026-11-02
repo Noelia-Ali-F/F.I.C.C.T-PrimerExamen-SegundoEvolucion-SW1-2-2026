@@ -10,6 +10,7 @@ import org.springframework.transaction.interceptor.TransactionProxyFactoryBean;
 import java.util.Properties;
 @Configuration
 public class HexagonalConfiguration {
+ @Bean com.arqnova.servicios.puertos.entrada.AiConversationUseCase aiConversation(AiMemoryPort memory,AiConversationProviderPort provider,AiConversationEventsPort events,AiTaskPort tasks,com.arqnova.servicios.puertos.entrada.ProjectUseCase projects,com.arqnova.servicios.puertos.entrada.UserQueryUseCase users){return new AiConversationService(memory,provider,events,tasks,projects,users,java.time.Clock.systemUTC());}
  @Bean com.arqnova.servicios.puertos.entrada.TokenValidationUseCase tokenValidation(AuthTokenPort tokens){return new TokenValidationService(tokens);}
  @Bean com.arqnova.servicios.puertos.entrada.AvatarQueryUseCase avatarQuery(AvatarStoragePort avatars){return new AvatarQueryService(avatars);}
  @Bean AuthService authService(UserStore users,AuthTokenPort tokens,PasswordPort passwords){return new AuthServiceImpl(users,tokens,passwords);}

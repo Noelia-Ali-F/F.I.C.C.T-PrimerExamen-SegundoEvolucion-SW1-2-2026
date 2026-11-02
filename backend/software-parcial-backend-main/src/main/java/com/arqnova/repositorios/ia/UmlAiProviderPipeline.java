@@ -38,13 +38,22 @@ public class UmlAiProviderPipeline {
     private List<String> geminiKeys(){return java.util.stream.Stream.of(geminiKey1,geminiKey2,geminiKey3).map(String::trim).filter(k->!k.isEmpty()).distinct().toList();}
 
     public Result generate(String prompt,Map<String,Object> schema,String imageUrl) throws Exception {
+        return generateWithBudget(prompt,schema,imageUrl,8192);
+    }
+
+    /** Separate bounded output budget for shared conversations; legacy UML/image calls retain their limits. */
+    public Result generateConversation(String prompt,Map<String,Object> schema,int maxTokens) throws Exception {
+        return generateWithBudget(prompt,schema,null,Math.max(256,Math.min(2048,maxTokens)));
+    }
+
+    private Result generateWithBudget(String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
         List<String> keys=geminiKeys();
         int attempts=0,lastStatus=keys.isEmpty()?503:429;
         for(int i=0;i<keys.size();i++){
             if(System.currentTimeMillis()<geminiKeysUnavailableUntil.getOrDefault(i,0L))continue;
             attempts++;
             try{
-                String json=gemini(prompt,schema,imageUrl,keys.get(i));
+                String json=gemini(prompt,schema,imageUrl,keys.get(i),maxTokens);
                 return new Result(json,"GEMINI",geminiModel,i>0||attempts>1);
             }catch(InterruptedException e){Thread.currentThread().interrupt();throw e;
             }catch(UpstreamFailure e){
@@ -61,7 +70,7 @@ public class UmlAiProviderPipeline {
         if(!groqKey.isBlank()&&System.currentTimeMillis()>=groqUnavailableUntil.get()){
             try{
                 String selectedModel=imageUrl==null?groqModel:groqImageModel;
-                String json=groq(prompt,schema,imageUrl,selectedModel);
+                String json=imageUrl==null?groq(prompt,schema,null,selectedModel,maxTokens):groq(prompt,schema,imageUrl,selectedModel);
                 return new Result(json,"GROQ",selectedModel,!keys.isEmpty());
             }catch(InterruptedException e){Thread.currentThread().interrupt();throw e;
             }catch(UpstreamFailure e){
