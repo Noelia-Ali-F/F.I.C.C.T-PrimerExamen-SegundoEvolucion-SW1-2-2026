@@ -1,9 +1,11 @@
 import '../domain/project_models.dart';
 import '../domain/project_viewer_port.dart';
+import '../../project_notifications/application/project_notification_use_cases.dart';
 
 class ProjectViewerUseCases {
-  ProjectViewerUseCases(this.port);
+  ProjectViewerUseCases(this.port, {this.notifications});
   final ProjectViewerPort port;
+  final ProjectNotificationUseCases? notifications;
   Future<ViewerSession> login(String email, String password) {
     if (email.trim().isEmpty || password.isEmpty) {
       throw const ViewerException('Escribe tu correo y contraseña.');
@@ -71,5 +73,8 @@ class ProjectViewerUseCases {
     if (error.status == 401 || error.status == 403) throw error;
   }
 
-  void dispose() => port.close();
+  void dispose() {
+    notifications?.dispose();
+    port.close();
+  }
 }

@@ -9,7 +9,7 @@ class HttpProjectViewerAdapter implements ProjectViewerPort {
     http.Client? client,
     this.baseUrl = const String.fromEnvironment(
       'UML_API_BASE_URL',
-      defaultValue: 'https://18-116-164-204.sslip.io',
+      defaultValue: 'http://10.0.2.2:8080',
     ),
   }) : _client = client ?? http.Client();
   final http.Client _client;

@@ -65,7 +65,6 @@ void main() {
       final requests = <http.Request>[];
       final graph = model();
       final api = HttpProjectViewerAdapter(
-        baseUrl: 'https://test',
         client: MockClient((r) async {
           requests.add(r);
           if (r.url.path.endsWith('/auth/login')) {
@@ -95,6 +94,8 @@ void main() {
       expect(diagram.model['relations'], graph['relations']);
       expect(requests.map((r) => r.method), ['POST', 'GET', 'GET']);
       expect(requests.last.headers['Authorization'], 'Bearer test-token');
+    expect(requests.first.url.host, '10.0.2.2');
+    expect(requests.first.url.port, 8080);
       expect(jsonDecode(requests.first.body)['username'], session.username);
       api.close();
     },

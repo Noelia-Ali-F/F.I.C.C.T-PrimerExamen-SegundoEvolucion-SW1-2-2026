@@ -206,7 +206,7 @@ Esta sección reúne el alcance existente del primer examen. Los ajustes de IA, 
 
 ## Segundo examen: implementación incremental
 
-La ampliación del segundo examen incorpora conversaciones compartidas con memoria DynamoDB, consulta/revisión y un modo de modelado aplicado una sola vez desde el servidor. La tabla y el rol de AWS están preparados; la ampliación todavía no está desplegada en la aplicación publicada. El modelado se habilita por separado con `AI_MODELING_ENABLED=true` y requiere la migración V9. El visor móvil de solo lectura y el historial por proyecto están implementados y probados; las notificaciones push siguen en configuración.
+La ampliación del segundo examen incorpora conversaciones compartidas con memoria DynamoDB, consulta/revisión y un modo de modelado aplicado una sola vez desde el servidor. La tabla y el rol de AWS están preparados; la ampliación todavía no está desplegada en la aplicación publicada. El modelado se habilita por separado con `AI_MODELING_ENABLED=true` y requiere la migración V9. El visor móvil de solo lectura y el historial por proyecto están implementados y probados; la integración Firebase de notificaciones está preparada para activación y prueba en local. No se construyó todavía el APK ni se desplegaron estas ampliaciones en AWS.
 
 El detalle por caso de uso y sus pruebas está en [docs/segundo-examen.md](docs/segundo-examen.md). Para cada nueva funcionalidad se documentan:
 
@@ -457,3 +457,5 @@ Debe publicarse el puerto del frontend en el Security Group. PostgreSQL debe per
 - Frontend: `arqnova-frontend`.
 - Aplicación móvil: `arqnova_mobile`.
 - Package Android: `com.arqnova.mobile`.
+
+La continuación local del segundo examen está documentada en [esta guía](docs/puesta-en-marcha-local-segundo-examen.md).

@@ -28,6 +28,8 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
     private final ProjectUseCase projects;
     private final UmlDiagramDataPort diagrams;
     private final UmlCollaborationActivityDataPort activities;
+    private final com.arqnova.servicios.puertos.entrada.ProjectPushUseCase push;
+    public UmlCollaborationService(com.arqnova.servicios.puertos.salida.GraphDataPort graph,CollaborationSessionStore sessions,ProjectUseCase projects,com.arqnova.servicios.puertos.salida.UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities){this(graph,sessions,projects,diagrams,activities,null);}
 
     public UmlSessionResponse start(CreateUmlSessionRequest request, String username) {
         projects.requireAccess(request.getProjectId(), username, ProjectMemberRole.OWNER);
@@ -111,6 +113,8 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
                 .elementId(event.getElementId()).elementType(event.getElementType()).operation(event.getOperation())
                 .eventData(event.getData()).occurredAt(LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault()))
                 .build());
+        if(push!=null&&!event.getType().startsWith("session:")&&!event.getType().endsWith(":move"))
+            push.notifyChange(new com.arqnova.modelo.ia.ProjectPush.Event("human-"+event.getEventId(),event.getProjectId(),"ArqNova: cambios en el proyecto",event.getUserName()+" "+event.getOperation()));
     }
 
     public List<UmlCollaborationEvent> activities(String sessionId, String username) {

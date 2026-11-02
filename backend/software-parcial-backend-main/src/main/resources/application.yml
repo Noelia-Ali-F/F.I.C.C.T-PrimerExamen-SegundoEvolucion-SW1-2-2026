@@ -29,6 +29,10 @@ logging:
 
 # Custom application properties
 app:
+  push:
+    enabled: ${PUSH_NOTIFICATIONS_ENABLED:false}
+    firebase-project: ${FIREBASE_PROJECT_ID:arqnova-segundo-examen}
+    credentials-file: ${FIREBASE_CREDENTIALS_FILE:}
   ai:
     conversations:
       modeling-enabled: ${AI_MODELING_ENABLED:false}

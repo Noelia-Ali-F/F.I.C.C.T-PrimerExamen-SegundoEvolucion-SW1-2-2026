@@ -17,7 +17,7 @@ Se incorpora una conversación persistente por proyecto, compartida por sus inte
 | CU8 | Adaptador independiente DynamoDB para memoria, compatible con PostgreSQL/JPA activos |
 | CU9 | Flutter: acceso con cuenta web, proyectos compartidos, visor de diagramas con zoom/desplazamiento y consulta de clases/relaciones; solo lectura |
 | CU10 | Historial paginado por proyecto; une actividad humana e intervenciones de IA con autores y fechas |
-| CU11 | En configuración: proyecto Firebase y notificaciones push |
+| CU11 | Integración FCM preparada: FID por usuario, avisos posteriores al commit y recepción móvil; activación y prueba real quedan para el entorno local |
 
 La cobertura anterior se verifica en pruebas aisladas; **no implica que la entrega ya esté activada en AWS**. La ampliación completa de los once casos continúa por etapas.
 
@@ -101,3 +101,15 @@ El lienzo de solo lectura conserva posiciones, atributos, métodos, multiplicida
 La API aditiva `GET /api/v1/projects/{projectId}/activities?cursor=&limit=30` consulta actividad de todas las sesiones del proyecto, previa comprobación de pertenencia. Su cursor ordena por fecha y por ID, evitando perder eventos con la misma marca de tiempo. No altera los endpoints anteriores de actividad por sesión.
 
 La dirección del modelador se configura mediante `UML_API_BASE_URL`, separada de `API_BASE_URL`, que sigue controlando el backend generado del asistente local. Validación: 23 pruebas Flutter correctas y `flutter analyze` sin incidencias; cinco pruebas backend dirigidas correctas, incluida paginación real en PostgreSQL y rechazo de usuarios ajenos. La ampliación móvil aún no está desplegada ni se afirma haber probado una notificación real en un teléfono.
+
+## Preparación de notificaciones y continuidad local
+
+El proyecto Firebase **ArqNova Segundo Examen** (`arqnova-segundo-examen`) y la app Android `com.arqnova.mobile` están creados. Se verificó que Cloud Messaging V1 está habilitado. El backend incorpora un puerto de entrega HTTP V1 con OAuth temporal y el móvil utiliza FIDs del SDK actual. La credencial privada del backend se proporcionará en local; no se generó ni se incorporó al repositorio.
+
+La migración V10 añade registros de dispositivos y deduplicación por evento/dispositivo. La identidad del dispositivo se vincula al usuario autenticado; los destinatarios se filtran por pertenencia al proyecto y cuenta habilitada. El envío se programa después del commit y su fallo no afecta a las operaciones del editor. El servidor mantiene `PUSH_NOTIFICATIONS_ENABLED=false` por defecto. El perfil anterior que cambia toda la base a DynamoDB no habilita este adaptador de dispositivos.
+
+Por indicación del usuario, la compilación del APK y la prueba en un teléfono se completarán después de clonar en local. El visor y el registro push apuntan por defecto al backend del emulador (`http://10.0.2.2:8080`), configurable con `UML_API_BASE_URL`. Se prepararon overrides Docker locales para PostgreSQL, memoria DynamoDB Local persistente y credenciales Firebase montadas únicamente cuando se activa push. No se desplegó esta ampliación en AWS.
+
+Validación final del código: **230 pruebas backend correctas y una opcional omitida**, **30 pruebas Flutter correctas**, `flutter analyze` sin incidencias y la compilación Angular verificada con **131 pruebas correctas**. OAuth, FCM y los proveedores de IA se simularon. No se afirma haber probado recepción real de push ni haber construido el APK.
+
+La guía [Puesta en marcha local del segundo examen](puesta-en-marcha-local-segundo-examen.md) contiene los pasos concretos para clonar, levantar los servicios y continuar esas verificaciones.

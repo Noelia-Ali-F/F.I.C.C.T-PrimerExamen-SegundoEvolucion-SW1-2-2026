@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import '../../project_notifications/domain/notification_ports.dart';
 import '../application/project_viewer_use_cases.dart';
 import '../domain/project_models.dart';
 import 'project_detail_page.dart';
@@ -16,10 +18,143 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
   Future<List<ViewerProject>>? projects;
   bool busy = false;
   String? error;
+  bool notificationsEnabled = false, notificationsBusy = false;
+  final notificationSubscriptions = <StreamSubscription>[];
+  ProjectNotification? pendingNotification;
+  @override
+  void initState() {
+    super.initState();
+    final notifications = widget.useCases.notifications;
+    if (notifications != null) {
+      notificationSubscriptions.add(
+        notifications.messages.listen((message) {
+          if (!mounted || session == null) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${message.title}: ${message.body}'),
+              action: SnackBarAction(
+                label: 'Ver',
+                onPressed: () => openNotification(message),
+              ),
+            ),
+          );
+        }),
+      );
+      notificationSubscriptions.add(
+        notifications.opened.listen(openNotification),
+      );
+    }
+  }
+
+  Future<void> openNotification(ProjectNotification message) async {
+    final actor = session;
+    if (actor == null) {
+      pendingNotification = message;
+      return;
+    }
+    widget.useCases.notifications?.takePending();
+    try {
+      final values = await widget.useCases.projects(actor);
+      if (!mounted || session != actor) return;
+      for (final project in values) {
+        if (project.id == message.projectId) {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder:
+                  (_) => ProjectDetailPage(
+                    useCases: widget.useCases,
+                    session: actor,
+                    project: project,
+                  ),
+            ),
+          );
+          return;
+        }
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este proyecto ya no está disponible para tu cuenta.'),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo abrir el proyecto de la notificación.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> bindNotifications(ViewerSession actor) async {
+    final notifications = widget.useCases.notifications;
+    if (notifications == null) return;
+    try {
+      final enabled = await notifications.bind(actor.token);
+      if (mounted && session == actor) {
+        setState(() => notificationsEnabled = enabled);
+      }
+    } catch (_) {
+      /* Reading projects remains available when push is not configured. */
+    }
+    final pending = pendingNotification ?? notifications.takePending();
+    pendingNotification = null;
+    if (mounted && session == actor && pending != null) {
+      await openNotification(pending);
+    }
+  }
+
+  Future<void> toggleNotifications() async {
+    if (notificationsBusy || session == null) return;
+    final notifications = widget.useCases.notifications!;
+    setState(() => notificationsBusy = true);
+    try {
+      if (notificationsEnabled) {
+        await notifications.disable();
+      } else {
+        await notifications.enable(session!.token);
+      }
+      if (mounted) setState(() => notificationsEnabled = notifications.enabled);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is NotificationException
+                  ? e.message
+                  : 'No se pudieron actualizar las notificaciones.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => notificationsBusy = false);
+    }
+  }
+
+  Future<void> logout() async {
+    try {
+      await widget.useCases.notifications?.disable();
+    } catch (_) {
+      /* Remove the local login even if the network is unavailable. */
+    }
+    if (mounted) {
+      setState(() {
+        session = null;
+        projects = null;
+        notificationsEnabled = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
     email.dispose();
     password.dispose();
+    for (final subscription in notificationSubscriptions) {
+      subscription.cancel();
+    }
     widget.useCases.dispose();
     super.dispose();
   }
@@ -38,6 +173,7 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
         busy = false;
         projects = widget.useCases.projects(value);
       });
+      unawaited(bindNotifications(value));
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -68,11 +204,7 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout),
-            onPressed:
-                () => setState(() {
-                  session = null;
-                  projects = null;
-                }),
+            onPressed: logout,
           ),
       ],
     ),
@@ -165,6 +297,23 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 12),
+                      if (widget.useCases.notifications != null)
+                        OutlinedButton.icon(
+                          onPressed:
+                              notificationsBusy ? null : toggleNotifications,
+                          icon: Icon(
+                            notificationsEnabled
+                                ? Icons.notifications_active_outlined
+                                : Icons.notifications_none,
+                          ),
+                          label: Text(
+                            notificationsBusy
+                                ? 'Actualizando…'
+                                : notificationsEnabled
+                                ? 'Desactivar notificaciones'
+                                : 'Activar notificaciones',
+                          ),
+                        ),
                       if (values.isEmpty)
                         const Padding(
                           padding: EdgeInsets.all(24),

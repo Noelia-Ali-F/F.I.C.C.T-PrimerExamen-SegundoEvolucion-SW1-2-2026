@@ -54,6 +54,7 @@ class AiConversationHybridIntegrationTest {
     @Autowired AiModelMutationPort mutations;
     @Autowired CollaborationSessionStore sessions;
     @Autowired UmlCollaborationActivityDataPort activityData;
+    @Autowired PushDevicePort pushDevices;
     @Autowired com.arqnova.servicios.puertos.entrada.ElementLockUseCase locks;
     @MockBean AiConversationProviderPort provider;
     String project,username,token,outsider;
@@ -166,5 +167,17 @@ class AiConversationHybridIntegrationTest {
         String cursor=new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).path("datos").path("nextCursor").asText();
         mvc.perform(get(url).param("limit","1").param("cursor",cursor).header("Authorization","Bearer "+token)).andExpect(status().isOk()).andExpect(jsonPath("$.datos.items[0].id").value("a-"+project));
         mvc.perform(get(url).header("Authorization","Bearer "+outsider)).andExpect(status().isForbidden());
+    }
+    @Test void pushDevicesBelongToAuthenticatedUsersAndOnlyProjectMembersReceiveEvents()throws Exception{
+        String other=tokens.verificar(outsider).username(),fid="fid-owner-"+UUID.randomUUID(),foreign="fid-other-"+UUID.randomUUID();
+        pushDevices.register(username,fid);pushDevices.register(other,foreign);
+        assertThat(pushDevices.recipients(project)).extracting(com.arqnova.modelo.ia.ProjectPush.Device::fid).containsExactly(fid);
+        pushDevices.remove(other,fid);
+        assertThat(pushDevices.recipients(project)).extracting(com.arqnova.modelo.ia.ProjectPush.Device::fid).containsExactly(fid);
+        assertThat(pushDevices.claim("push-test-event",fid)).isTrue();assertThat(pushDevices.claim("push-test-event",fid)).isFalse();
+        pushDevices.releaseClaim("push-test-event",fid);assertThat(pushDevices.claim("push-test-event",fid)).isTrue();
+        pushDevices.remove(username,fid);assertThat(pushDevices.recipients(project)).isEmpty();
+        mvc.perform(get("/api/v1/push/status")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/push/devices").contentType("application/json").content("{\"fid\":\"fid-test-device\"}")).andExpect(status().isUnauthorized());
     }
 }

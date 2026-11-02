@@ -1,5 +1,5 @@
 import 'app.dart';
 
-void main() {
-  runArqNovaMobileApp();
+Future<void> main() async {
+  await runArqNovaMobileApp();
 }

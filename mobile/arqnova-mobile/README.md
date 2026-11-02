@@ -51,9 +51,25 @@ Este módulo utiliza `UML_API_BASE_URL`; la configuración `API_BASE_URL` del
 asistente local anterior se conserva de manera independiente:
 
 ```bash
-flutter run -d android --dart-define=UML_API_BASE_URL=https://18-116-164-204.sslip.io
+flutter run -d android --dart-define=UML_API_BASE_URL=http://10.0.2.2:8080
 ```
 
 La API del backend del segundo examen debe estar desplegada para consultar el
-historial ampliado. Las notificaciones push de CU11 se configuran por separado.
+historial ampliado. La integración de notificaciones CU11 está preparada con Firebase Cloud Messaging; su activación y la comprobación en Android se completarán en local.
 Las pruebas del módulo usan HTTP simulado y no consumen APIs de IA.
+
+## Notificaciones y compilación local
+
+Firebase: `arqnova-segundo-examen`, paquete Android `com.arqnova.mobile`.
+Los identificadores públicos de la app están configurados. La credencial de envío
+se proporciona únicamente al backend local. El SDK utiliza Firebase Installation
+IDs (FID), permiso de notificaciones, avisos en primer plano y apertura del
+proyecto después de verificar el acceso.
+
+Requiere Android 7.0/API 24 o superior. No se instaló Android SDK ni se compiló
+un APK en esta etapa, de acuerdo con la decisión de continuar desde un clon
+local. Se verificaron 30 pruebas Flutter y el análisis estático. La recepción
+real de push en un teléfono sigue pendiente.
+
+Ver la [guía de continuidad local](../../docs/puesta-en-marcha-local-segundo-examen.md)
+para los comandos de backend, emulador, teléfono físico y credenciales Firebase.
