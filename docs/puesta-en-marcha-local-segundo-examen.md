@@ -1,6 +1,6 @@
 # Continuación local del segundo examen
 
-El código del segundo examen se prepara y prueba en la rama `feat/segundo-examen-ia-colaborativa`. La aplicación publicada en AWS mantiene su despliegue anterior. La compilación del APK y la comprobación de notificaciones en un teléfono se realizarán después de clonar en local.
+El código del segundo examen se prepara y prueba en la rama `feat/segundo-examen-ia-colaborativa`. La web y el backend del segundo examen están publicados en AWS; por indicación del usuario, su continuación se realiza allí. Esta guía conserva el entorno local opcional y los pasos del móvil. La compilación del APK y la comprobación de notificaciones en un teléfono se realizarán después de clonar en local.
 
 ## 1. Clonar
 

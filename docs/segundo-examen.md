@@ -19,7 +19,7 @@ Se incorpora una conversación persistente por proyecto, compartida por sus inte
 | CU10 | Historial paginado por proyecto; une actividad humana e intervenciones de IA con autores y fechas |
 | CU11 | Integración FCM preparada: FID por usuario, avisos posteriores al commit y recepción móvil; activación y prueba real quedan para el entorno local |
 
-La cobertura anterior se verifica en pruebas aisladas; **no implica que la entrega ya esté activada en AWS**. La ampliación completa de los once casos continúa por etapas.
+La parte web/backend está activada en AWS desde el 2 de noviembre de 2026. La comprobación posterior verificó autenticación, memoria compartida, acceso y modelado idempotente; no consumió APIs de IA. Los casos móviles continúan pendientes de prueba en Android. Ver [despliegue AWS](despliegue-segundo-examen-aws.md).
 
 ## Persistencia híbrida y arquitectura
 
@@ -42,7 +42,7 @@ AWS_REGION=us-east-2
 
 `AI_MEMORY_ENDPOINT` solo se usa en pruebas locales y debe permanecer vacío en AWS. La plantilla `deploy/ai-memory-cloudformation.json` crea una tabla con claves `pk`/`sk` y un instance profile de EC2 limitado a esa tabla. La instancia necesita ese perfil y acceso a metadata desde Docker. No se requieren nuevas access keys dentro del código.
 
-Infraestructura preparada y verificada en Ohio: stack `arqnova-ai-memory` creado, tabla activa con pago por uso y rol asignado a EC2. Se comprobó acceso desde el host y Docker mediante credenciales temporales del rol. Esto no activa todavía el chat en la aplicación publicada. La activación requiere conservar la imagen anterior y desplegar los artefactos probados manteniendo PostgreSQL. No se migran los datos existentes a NoSQL. La migración aditiva V9 crea únicamente `ai_model_mutation_receipts`, necesaria antes de activar el modo MODEL. El nuevo panel, **Chat de equipo**, está separado de **Editar diagrama** dentro del asistente.
+Infraestructura preparada y verificada en Ohio: stack `arqnova-ai-memory` creado, tabla activa con pago por uso y rol asignado a EC2. Se comprobó acceso desde el host y Docker mediante credenciales temporales del rol. El chat y MODEL se activaron mediante el override AWS, conservando las imágenes anteriores y PostgreSQL. No se migran los datos existentes a NoSQL. La migración aditiva V9 crea únicamente `ai_model_mutation_receipts`, necesaria antes de activar el modo MODEL. El nuevo panel, **Chat de equipo**, está separado de **Editar diagrama** dentro del asistente.
 
 ## API y flujo
 
@@ -108,7 +108,7 @@ El proyecto Firebase **ArqNova Segundo Examen** (`arqnova-segundo-examen`) y la 
 
 La migración V10 añade registros de dispositivos y deduplicación por evento/dispositivo. La identidad del dispositivo se vincula al usuario autenticado; los destinatarios se filtran por pertenencia al proyecto y cuenta habilitada. El envío se programa después del commit y su fallo no afecta a las operaciones del editor. El servidor mantiene `PUSH_NOTIFICATIONS_ENABLED=false` por defecto. El perfil anterior que cambia toda la base a DynamoDB no habilita este adaptador de dispositivos.
 
-Por indicación del usuario, la compilación del APK y la prueba en un teléfono se completarán después de clonar en local. El visor y el registro push apuntan por defecto al backend del emulador (`http://10.0.2.2:8080`), configurable con `UML_API_BASE_URL`. Se prepararon overrides Docker locales para PostgreSQL, memoria DynamoDB Local persistente y credenciales Firebase montadas únicamente cuando se activa push. No se desplegó esta ampliación en AWS.
+Por indicación del usuario, la compilación del APK y la prueba en un teléfono se completarán después de clonar en local. El visor y el registro push apuntan por defecto al backend del emulador (`http://10.0.2.2:8080`), configurable con `UML_API_BASE_URL`. Se prepararon overrides Docker locales para PostgreSQL, memoria DynamoDB Local persistente y credenciales Firebase montadas únicamente cuando se activa push. La integración push permanece desactivada en AWS; la ampliación web/backend sí está desplegada.
 
 Validación final del código: **230 pruebas backend correctas y una opcional omitida**, **30 pruebas Flutter correctas**, `flutter analyze` sin incidencias y la compilación Angular verificada con **131 pruebas correctas**. OAuth, FCM y los proveedores de IA se simularon. No se afirma haber probado recepción real de push ni haber construido el APK.
 

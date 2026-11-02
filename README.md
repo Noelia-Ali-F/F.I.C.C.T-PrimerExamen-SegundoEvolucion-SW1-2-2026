@@ -6,7 +6,7 @@ El proyecto continúa en el **segundo examen de Software I**. La base del primer
 
 ## Persistencia NoSQL para el segundo examen
 
-El CU8 del segundo examen requiere NoSQL para conversaciones y contexto de IA. La ampliación utiliza una tabla DynamoDB independiente y **mantiene PostgreSQL para el sistema existente**. El módulo nuevo está desactivado por defecto hasta verificar su configuración en AWS.
+El CU8 del segundo examen requiere NoSQL para conversaciones y contexto de IA. La ampliación utiliza una tabla DynamoDB independiente y **mantiene PostgreSQL para el sistema existente**. El módulo nuevo está desactivado por defecto; el despliegue AWS del segundo examen lo habilita mediante su override versionado.
 
 La adaptación anterior para migrar toda la base sigue disponible como opción técnica, pero no es necesaria para esta entrega ni está activada. Ver [segundo examen](docs/segundo-examen.md) y [adaptación general anterior](docs/dynamodb.md).
 
@@ -206,7 +206,7 @@ Esta sección reúne el alcance existente del primer examen. Los ajustes de IA, 
 
 ## Segundo examen: implementación incremental
 
-La ampliación del segundo examen incorpora conversaciones compartidas con memoria DynamoDB, consulta/revisión y un modo de modelado aplicado una sola vez desde el servidor. La tabla y el rol de AWS están preparados; la ampliación todavía no está desplegada en la aplicación publicada. El modelado se habilita por separado con `AI_MODELING_ENABLED=true` y requiere la migración V9. El visor móvil de solo lectura y el historial por proyecto están implementados y probados; la integración Firebase de notificaciones está preparada para activación y prueba en local. No se construyó todavía el APK ni se desplegaron estas ampliaciones en AWS.
+La ampliación del segundo examen incorpora conversaciones compartidas con memoria DynamoDB, consulta/revisión y un modo de modelado aplicado una sola vez desde el servidor. La tabla y el rol de AWS están preparados; la ampliación web/backend está desplegada desde el 2 de noviembre de 2026. El modelado se habilita por separado con `AI_MODELING_ENABLED=true` y requiere la migración V9. El visor móvil de solo lectura y el historial por proyecto están implementados y probados; la integración Firebase de notificaciones está preparada para activación y prueba en local. No se construyó todavía el APK; las notificaciones móviles siguen pendientes. Ver [despliegue y comprobaciones AWS](docs/despliegue-segundo-examen-aws.md).
 
 El detalle por caso de uso y sus pruebas está en [docs/segundo-examen.md](docs/segundo-examen.md). Para cada nueva funcionalidad se documentan:
 
