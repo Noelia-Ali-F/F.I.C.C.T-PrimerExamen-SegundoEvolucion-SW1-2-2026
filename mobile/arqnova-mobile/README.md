@@ -37,3 +37,23 @@ flutter build apk --debug
 
 La aplicación Android necesita los permisos de Internet y micrófono para las
 operaciones REST y la entrada por voz, respectivamente.
+
+## Segundo examen: consulta de proyectos UML
+
+**Ver mis proyectos UML** permite iniciar sesión con la cuenta del sistema web,
+consultar los proyectos propios o compartidos y abrir sus diagramas en modo de
+solo lectura. Incluye zoom, desplazamiento, clases, atributos, métodos,
+multiplicidades, composición y clases de asociación. La pestaña **Actividad**
+reúne cambios manuales e intervenciones de IA, identifica a su autor y permite
+recuperar entradas anteriores.
+
+Este módulo utiliza `UML_API_BASE_URL`; la configuración `API_BASE_URL` del
+asistente local anterior se conserva de manera independiente:
+
+```bash
+flutter run -d android --dart-define=UML_API_BASE_URL=https://18-116-164-204.sslip.io
+```
+
+La API del backend del segundo examen debe estar desplegada para consultar el
+historial ampliado. Las notificaciones push de CU11 se configuran por separado.
+Las pruebas del módulo usan HTTP simulado y no consumen APIs de IA.

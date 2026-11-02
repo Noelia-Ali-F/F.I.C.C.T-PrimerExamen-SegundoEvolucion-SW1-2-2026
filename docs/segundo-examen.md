@@ -15,7 +15,9 @@ Se incorpora una conversación persistente por proyecto, compartida por sus inte
 | CU5 | Modo de consulta con explicaciones y ejemplos sin modificar el lienzo |
 | CU6 | Revisión con observaciones y referencias a elementos existentes; muestra la versión revisada |
 | CU8 | Adaptador independiente DynamoDB para memoria, compatible con PostgreSQL/JPA activos |
-| CU9, CU10 y CU11 | Pendientes: visor móvil, historial por proyecto y notificaciones push |
+| CU9 | Flutter: acceso con cuenta web, proyectos compartidos, visor de diagramas con zoom/desplazamiento y consulta de clases/relaciones; solo lectura |
+| CU10 | Historial paginado por proyecto; une actividad humana e intervenciones de IA con autores y fechas |
+| CU11 | En configuración: proyecto Firebase y notificaciones push |
 
 La cobertura anterior se verifica en pruebas aisladas; **no implica que la entrega ya esté activada en AWS**. La ampliación completa de los once casos continúa por etapas.
 
@@ -89,3 +91,13 @@ Este mecanismo mantiene el alcance actual de una instancia del backend: los bloq
 En un entorno aislado, dos usuarios autenticados del mismo proyecto comprobaron la sincronización sin recargar, incluso con el panel de chat cerrado en el segundo navegador. Se creó Libro, una asociación muchos a muchos Cliente–Libro con DetalleClienteLibro y una composición Libro–Venta. Se verificaron en el SVG del segundo usuario un conector discontinuo de clase de asociación y un marcador de composición relleno. Reenviar la solicitud de composición conservó la versión 4 y las tres relaciones, sin duplicar el cambio.
 
 La prueba utilizó el intérprete determinista y respuestas locales simuladas del proveedor, sin llamadas a APIs de IA reales. Una respuesta de simulación con formato incorrecto fue rechazada sin modificar el modelo; después de corregir la simulación, la composición se aplicó correctamente. Se eliminaron únicamente los 13 registros de la partición de esa prueba y se detuvieron la PostgreSQL temporal y los auxiliares. La aplicación publicada no fue reiniciada ni modificada.
+
+## Visor móvil e historial del segundo examen
+
+La nueva opción **Ver mis proyectos UML** abre un módulo independiente del asistente local. El módulo conserva las cuatro áreas hexagonales de Flutter: dominio y puerto, casos de uso, adaptador HTTP y presentación. Su puerto no ofrece operaciones para modificar diagramas. La sesión se mantiene en memoria durante la navegación; los datos se consultan con el token de la misma cuenta usada en el sistema web.
+
+El lienzo de solo lectura conserva posiciones, atributos, métodos, multiplicidades, composición, agregación, herencia, dependencia y el enlace discontinuo de clases de asociación. Permite ampliar/desplazar y consultar la lista completa de elementos. El historial combina autores y fechas de actividad humana con consultas, revisiones y modelado de IA. Cada fuente conserva su cursor para recuperar entradas anteriores sin duplicarlas. Si la memoria IA está temporalmente indisponible, la actividad humana permanece visible junto con un aviso.
+
+La API aditiva `GET /api/v1/projects/{projectId}/activities?cursor=&limit=30` consulta actividad de todas las sesiones del proyecto, previa comprobación de pertenencia. Su cursor ordena por fecha y por ID, evitando perder eventos con la misma marca de tiempo. No altera los endpoints anteriores de actividad por sesión.
+
+La dirección del modelador se configura mediante `UML_API_BASE_URL`, separada de `API_BASE_URL`, que sigue controlando el backend generado del asistente local. Validación: 23 pruebas Flutter correctas y `flutter analyze` sin incidencias; cinco pruebas backend dirigidas correctas, incluida paginación real en PostgreSQL y rechazo de usuarios ajenos. La ampliación móvil aún no está desplegada ni se afirma haber probado una notificación real en un teléfono.

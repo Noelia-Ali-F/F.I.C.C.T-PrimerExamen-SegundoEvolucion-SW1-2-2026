@@ -53,6 +53,7 @@ class AiConversationHybridIntegrationTest {
     @Autowired AiMemoryPort memory;@Autowired PlatformTransactionManager transactions;
     @Autowired AiModelMutationPort mutations;
     @Autowired CollaborationSessionStore sessions;
+    @Autowired UmlCollaborationActivityDataPort activityData;
     @Autowired com.arqnova.servicios.puertos.entrada.ElementLockUseCase locks;
     @MockBean AiConversationProviderPort provider;
     String project,username,token,outsider;
@@ -152,5 +153,18 @@ class AiConversationHybridIntegrationTest {
             assertThatThrownBy(()->mutations.apply(modelTurn("model-006"),modelContext(2),answer)).isInstanceOf(DuplicateResourceException.class);
             assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(2);assertThat(mutations.find(modelTurn("model-006"))).isEmpty();
         }finally{locks.releaseBySocket("manual-test-socket");}
+    }
+    @Test void projectActivityIsPaginatedAndOnlyVisibleToMembers()throws Exception{
+        String sessionId=UUID.randomUUID().toString();var now=java.time.LocalDateTime.now();
+        sessions.save(UmlCollaborationSession.builder().id(sessionId).projectId(project).inviteCode(UUID.randomUUID().toString().substring(0,10)).createdBy(username).active(true).model(modelContext(1).diagram()).createdAt(now).updatedAt(now).build());
+        for(String id:List.of("a-","b-"))activityData.save(com.arqnova.modelo.entidades.UmlCollaborationActivityEntity.builder()
+                .eventId(id+project).sessionId(sessionId).projectId(project).userId(username).userName("Noelia")
+                .eventType("class:create").operation("Creó Libro").occurredAt(now).build());
+        String url="/api/v1/projects/"+project+"/activities";
+        String response=mvc.perform(get(url).param("limit","1").header("Authorization","Bearer "+token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.datos.items[0].author").value("Noelia")).andExpect(jsonPath("$.datos.items[0].id").value("b-"+project)).andReturn().getResponse().getContentAsString();
+        String cursor=new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).path("datos").path("nextCursor").asText();
+        mvc.perform(get(url).param("limit","1").param("cursor",cursor).header("Authorization","Bearer "+token)).andExpect(status().isOk()).andExpect(jsonPath("$.datos.items[0].id").value("a-"+project));
+        mvc.perform(get(url).header("Authorization","Bearer "+outsider)).andExpect(status().isForbidden());
     }
 }
