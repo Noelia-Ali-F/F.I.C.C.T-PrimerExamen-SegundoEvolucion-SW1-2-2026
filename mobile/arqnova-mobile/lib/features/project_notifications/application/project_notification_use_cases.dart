@@ -9,7 +9,7 @@ class ProjectNotificationUseCases {
   bool enabled = false;
   bool _disposed = false;
   int _generation = 0;
-  StreamSubscription<String>? _registrations;
+  StreamSubscription<void>? _registrations;
   Stream<ProjectNotification> get messages => platform.messages;
   Stream<ProjectNotification> get opened => platform.opened;
   ProjectNotification? takePending() => platform.takePending();
@@ -49,19 +49,28 @@ class ProjectNotificationUseCases {
     if (_disposed || generation != _generation || _token != token) return false;
     if (!await _save(token, fid, generation)) return false;
     await _registrations?.cancel();
-    _registrations = platform.registrations.listen((next) async {
-      final active = _token;
-      if (!enabled || active == null || _disposed) return;
-      try {
-        await _save(active, next, generation);
-      } catch (_) {
-        /* A later login can refresh registration. */
-      }
-    });
+    // Process rotations in order: a slow old registration must not remove the newest one.
+    _registrations = platform.registrations
+        .asyncMap((next) async {
+          final active = _token;
+          if (!enabled || active == null || _disposed) return;
+          try {
+            await _save(active, next, generation);
+          } catch (_) {
+            /* A later login can refresh registration. */
+          }
+        })
+        .listen(
+          (_) {},
+          onError: (Object _) {
+            // A platform stream failure must not become an unhandled application error.
+          },
+        );
     return true;
   }
 
   Future<bool> _save(String token, String fid, int generation) async {
+    if (_disposed || generation != _generation || _token != token) return false;
     await api.register(token, fid);
     if (_disposed || generation != _generation || _token != token) {
       try {

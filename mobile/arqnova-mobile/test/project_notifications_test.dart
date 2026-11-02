@@ -9,6 +9,49 @@ import 'package:arqnova_mobile/features/project_notifications/data/http_push_dev
 
 void main() {
   test(
+    'las rotaciones rápidas se guardan en orden aunque la primera tarde',
+    () async {
+      final platform = FakePushPlatform();
+      final api = FakePushApi();
+      final useCases = ProjectNotificationUseCases(platform, api);
+      await useCases.enable('session');
+      final first = Completer<void>();
+      api.gates['fid-first'] = first;
+      platform.ids.add('fid-first');
+      platform.ids.add('fid-latest');
+      for (var n = 0; n < 5; n++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(api.saved, ['session:fid-initial', 'session:fid-first']);
+      first.complete();
+      for (var n = 0; n < 10; n++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(api.saved.last, 'session:fid-latest');
+      expect(api.removed, ['session:fid-initial', 'session:fid-first']);
+      await useCases.disable();
+      expect(api.removed.last, 'session:fid-latest');
+      useCases.dispose();
+    },
+  );
+  test(
+    'un error del stream de registro no se propaga a la navegación',
+    () async {
+      final platform = FakePushPlatform();
+      final api = FakePushApi();
+      final useCases = ProjectNotificationUseCases(platform, api);
+      await useCases.enable('session');
+      platform.ids.addError(StateError('platform disconnected'));
+      await Future<void>.delayed(Duration.zero);
+      platform.ids.add('fid-recovered');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(api.saved.last, 'session:fid-recovered');
+      expect(useCases.enabled, true);
+      useCases.dispose();
+    },
+  );
+  test(
     'leer proyectos no solicita automáticamente el permiso de notificaciones',
     () async {
       final platform = FakePushPlatform()..granted = false;
@@ -166,12 +209,14 @@ class FakePushApi implements PushDeviceApiPort {
   final saved = <String>[], removed = <String>[];
   bool configured = true;
   Completer<void>? gate;
+  final gates = <String, Completer<void>>{};
   @override
   Future<bool> enabled(String authToken) async => configured;
   @override
   Future<void> register(String authToken, String fid) async {
     saved.add('$authToken:$fid');
     await gate?.future;
+    await gates[fid]?.future;
   }
 
   @override
