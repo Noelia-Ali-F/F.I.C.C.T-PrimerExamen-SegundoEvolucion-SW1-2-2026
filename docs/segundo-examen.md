@@ -125,3 +125,6 @@ Para el despliegue con clave independiente se añade el override de ejecución e
 Verificación de esta actualización en AWS: backend saludable, claves anteriores sin cambios y dos solicitudes reales breves con Groq (ASK y REVIEW) completadas. Ambas conservaron el diagrama. También se comprobó MODEL determinista, historial compartido, rechazo de un usuario ajeno e idempotencia. Se eliminaron el proyecto, las tres cuentas temporales y sus diez registros DynamoDB. Regresión backend: 234 pruebas correctas y una opcional omitida; JAR e imagen construidos. No se obtuvo un costo monetario exacto de estas dos llamadas.
 
 Pruebas web posteriores al despliegue y ampliación del disco: [resultados del 2 de noviembre de 2026](pruebas-web-aws-2026-11-02.md). Incluyen dos navegadores, memoria real, sincronización, permisos, reintento idempotente y exportación/importación XMI; solo dos solicitudes reales de IA en esa ronda. La prueba real con fotografía, audio y Enterprise Architect de escritorio sigue pendiente.
+
+
+Actualizacion Android: se construyo e instalo el APK debug en un Samsung Android 13 por ADB inalambrico y se comprobo acceso real a AWS, visor y actividad. Ver [prueba fisica del movil](pruebas-movil-android-2026-11-02.md). CU11 push sigue pendiente de activacion y entrega real. Las referencias anteriores a APK no construido describen la etapa previa.

@@ -73,3 +73,8 @@ real de push en un teléfono sigue pendiente.
 
 Ver la [guía de continuidad local](../../docs/puesta-en-marcha-local-segundo-examen.md)
 para los comandos de backend, emulador, teléfono físico y credenciales Firebase.
+
+
+## Android fisico y AWS
+
+El primer APK debug ya se compilo e instalo por ADB inalambrico en Android 13. Para usar el visor con AWS: `fvm flutter run -d <dispositivo> --dart-define=UML_API_BASE_URL=https://18-116-164-204.sslip.io`. Requiere Java 17. Ver [resultado y preparacion Windows](../../docs/pruebas-movil-android-2026-11-02.md). Push sigue pendiente de activacion en el servidor.
