@@ -2,6 +2,8 @@
 
 La ampliación web/backend se desplegó el **2 de noviembre de 2026**, desde la rama `feat/segundo-examen-ia-colaborativa`, revisión de código `d64432a`. Imágenes: `arqnova-backend:second-exam-d64432a` y `arqnova-frontend:second-exam-d64432a`. El móvil continúa en local; push permanece desactivado.
 
+El chat usa `arqnova-backend:chat-isolated-20261102` y una clave independiente; ver [segundo examen](segundo-examen.md). Para recrearlo, agregar `-f /home/ubuntu/arqnova-chat.runtime.json` al comando siguiente.
+
 ## Configuración y operación
 
 Se mantienen PostgreSQL, sus volúmenes, autenticación, claves y configuración de los proveedores existentes. Las conversaciones usan la tabla DynamoDB `arqnova-ai-memory` en Ohio mediante el rol de EC2. Se habilitan conversaciones y modelado con `docker-compose.second-exam-aws.yml`; no se utiliza el override local ni se cambia toda la base al perfil DynamoDB.
