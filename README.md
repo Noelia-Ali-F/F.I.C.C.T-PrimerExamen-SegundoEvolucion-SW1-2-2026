@@ -459,3 +459,6 @@ Debe publicarse el puerto del frontend en el Security Group. PostgreSQL debe per
 - Package Android: `com.arqnova.mobile`.
 
 La continuación local del segundo examen está documentada en [esta guía](docs/puesta-en-marcha-local-segundo-examen.md).
+
+
+La app Android se puede descargar sin iniciar sesion desde [el login publicado](https://18-116-164-204.sslip.io/login). Ver [publicacion del APK](docs/descarga-apk-login.md).

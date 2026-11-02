@@ -81,3 +81,6 @@ El primer APK debug ya se compilo e instalo por ADB inalambrico en Android 13. P
 
 
 Actualizacion push: ya esta habilitado en AWS y probado en primer y segundo plano en Android 13. Iniciar sesion en Ver mis proyectos UML y pulsar Activar notificaciones para registrar esta instalacion con la cuenta actual. Ver [CU11](../../docs/notificaciones-push-aws.md).
+
+
+APK academico publicado para descarga desde el login web: [publicacion y actualizacion](../../docs/descarga-apk-login.md). El APK release incluye los refuerzos del registro de notificaciones.

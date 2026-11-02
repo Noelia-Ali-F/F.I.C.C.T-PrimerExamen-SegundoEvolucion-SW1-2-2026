@@ -51,3 +51,6 @@ Con el volumen en estado optimizing, se ejecutaron `growpart /dev/nvme0n1 1` y `
 
 
 Push se activo despues de este despliegue inicial. Para recrear el backend actual debe agregarse tambien `-f docker-compose.push-aws.yml` como ultimo override. Ver [configuracion y pruebas push](notificaciones-push-aws.md).
+
+
+El frontend incorpora la descarga publica del APK desde el login. Para conservarla al recrear el servicio, agregar como ultimo override `-f docker-compose.mobile-download-aws.yml`; ver [descarga Android](descarga-apk-login.md).
