@@ -9,6 +9,7 @@ export class HttpAiConversationAdapter implements AiConversationPort {
   private path(project:string){return `${this.base}/api/v1/projects/${encodeURIComponent(project)}/ai`;}
   status(project:string){return this.http.get<any>(`${this.path(project)}/status`).pipe(map(r=>r.datos as {enabled:boolean}));}
   history(project:string,cursor?:string){return this.http.get<any>(`${this.path(project)}/messages`,{params:cursor?new HttpParams().set('cursor',cursor):undefined}).pipe(map(r=>r.datos as AiConversationPage));}
+  get(project:string,requestId:string){return this.http.get<any>(`${this.path(project)}/messages/${encodeURIComponent(requestId)}`).pipe(map(r=>r.datos as AiTurn));}
   send(project:string,requestId:string,mode:AiConversationMode,instruction:string){return this.http.post<any>(`${this.path(project)}/messages`,{requestId,mode,instruction}).pipe(map(r=>r.datos as AiTurn));}
   watch(project:string):Observable<AiConversationChange>{
     return new Observable(observer=>{

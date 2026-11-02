@@ -3,6 +3,7 @@ import { AiConversationMode,AiConversationPage,AiTurn,AiConversationChange } fro
 export interface AiConversationPort {
   status(projectId: string): Observable<{enabled:boolean}>;
   history(projectId: string, cursor?: string): Observable<AiConversationPage>;
+  get(projectId: string, requestId: string): Observable<AiTurn>;
   send(projectId: string, requestId: string, mode: AiConversationMode, instruction: string): Observable<AiTurn>;
   watch(projectId: string): Observable<AiConversationChange>;
 }

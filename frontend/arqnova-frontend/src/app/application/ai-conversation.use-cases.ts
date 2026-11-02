@@ -4,6 +4,7 @@ export class AiConversationUseCases {
   constructor(private readonly port:AiConversationPort){}
   status(project:string){return this.port.status(project);}
   history(project:string,cursor?:string){return this.port.history(project,cursor);}
+  get(project:string,requestId:string){return this.port.get(project,requestId);}
   send(project:string,requestId:string,mode:AiConversationMode,instruction:string){
     if(!instruction.trim()||instruction.length>4000)throw new Error('Escribe un mensaje de hasta 4000 caracteres.');
     return this.port.send(project,requestId,mode,instruction.trim());

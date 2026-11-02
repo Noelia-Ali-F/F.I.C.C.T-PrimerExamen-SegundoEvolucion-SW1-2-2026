@@ -44,15 +44,19 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   @Input({required:true})projectId='';
   private readonly service=inject(AiConversationService);
   private subscriptions=new Subscription();private poll?:ReturnType<typeof setInterval>;private refreshing=false;private refreshAgain=false;private historyLoaded=false;
+  private loadingTurns=new Set<string>();
   enabled=signal(false);loading=signal(true);sending=signal(false);error=signal('');turns=signal<AiTurn[]>([]);cursor=signal<string|null>(null);loadingOlder=signal(false);
   mode:AiConversationMode='ASK';instruction='';private requestId:string|null=null;private requestContent='';
   ngOnInit(){this.subscriptions.add(this.service.status(this.projectId).subscribe({next:status=>{
     this.enabled.set(status.enabled);this.loading.set(false);
     if(!status.enabled){this.error.set('La conversación compartida todavía no está habilitada. Puedes seguir usando Editar diagrama.');return;}
-    this.refresh();this.subscriptions.add(this.service.watch(this.projectId).subscribe(()=>this.refresh()));
-    this.poll=setInterval(()=>{if(this.turns().some(t=>t.state==='PENDING'))this.refresh();},4000);
+    this.refresh();this.subscriptions.add(this.service.watch(this.projectId).subscribe(change=>change.requestId?this.loadTurn(change.requestId):this.refresh()));
+    this.poll=setInterval(()=>this.turns().filter(t=>t.state==='PENDING').slice(0,4).forEach(turn=>this.loadTurn(turn.requestId)),4000);
   },error:()=>{this.loading.set(false);this.error.set('No se pudo conectar con la conversación compartida.');}}));}
   ngOnDestroy(){this.subscriptions.unsubscribe();if(this.poll)clearInterval(this.poll);}
+  private loadTurn(id:string){if(this.loadingTurns.has(id))return;this.loadingTurns.add(id);this.subscriptions.add(this.service.get(this.projectId,id).subscribe({next:turn=>{
+    this.turns.update(turns=>mergeAiTurns(turns,[turn]));this.loadingTurns.delete(id);
+  },error:()=>this.loadingTurns.delete(id)}));}
   refresh(){if(this.refreshing){this.refreshAgain=true;return;}this.refreshing=true;this.subscriptions.add(this.service.history(this.projectId).subscribe({next:page=>{
     this.turns.update(turns=>mergeAiTurns(turns,page.turns));if(!this.historyLoaded){this.cursor.set(page.nextCursor);this.historyLoaded=true;}this.refreshing=false;this.error.set('');
     if(this.refreshAgain){this.refreshAgain=false;this.refresh();}

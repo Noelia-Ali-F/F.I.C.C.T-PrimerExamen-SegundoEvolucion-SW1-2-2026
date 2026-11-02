@@ -39,7 +39,7 @@ AWS_REGION=us-east-2
 
 `AI_MEMORY_ENDPOINT` solo se usa en pruebas locales y debe permanecer vacío en AWS. La plantilla `deploy/ai-memory-cloudformation.json` crea una tabla con claves `pk`/`sk` y un instance profile de EC2 limitado a esa tabla. La instancia necesita ese perfil y acceso a metadata desde Docker. No se requieren nuevas access keys dentro del código.
 
-La activación requiere verificar primero la tabla/rol, construir y probar los artefactos, conservar la imagen anterior y desplegar la ampliación manteniendo PostgreSQL. No se ejecutan migraciones de los datos existentes. El nuevo panel, **Chat de equipo**, está separado de **Editar diagrama** dentro del asistente.
+Infraestructura preparada y verificada en Ohio: stack `arqnova-ai-memory` creado, tabla activa con pago por uso y rol asignado a EC2. Se comprobó acceso desde el host y Docker mediante credenciales temporales del rol. Esto no activa todavía el chat en la aplicación publicada. La activación requiere conservar la imagen anterior y desplegar los artefactos probados manteniendo PostgreSQL. No se ejecutan migraciones de los datos existentes. El nuevo panel, **Chat de equipo**, está separado de **Editar diagrama** dentro del asistente.
 
 ## API y flujo
 
@@ -66,5 +66,7 @@ Las consultas tienen un máximo de 4000 caracteres. El modelo compacto tiene un 
 - Integración híbrida: PostgreSQL real desechable + DynamoDB Local; confirma que JPA y el diagrama original se conservan.
 - Web: historial, reintentos y fusión de eventos sin degradar una respuesta completada a pendiente.
 - Regresión: suites existentes de IA, edición, generadores, persistencia y arquitectura.
+- Prueba de navegador con dos usuarios: recepción compartida sin recargar, consulta y revisión completadas, recuperación tras recargar y reenvío idempotente. Se utilizó la tabla DynamoDB real, PostgreSQL temporal independiente y proveedor simulado: dos llamadas simuladas, ninguna llamada a una API de IA real. El diagrama mantuvo versión 1, posiciones, clases y relación. Los siete registros de la partición de prueba fueron eliminados al terminar.
+- Última validación automática: suite completa del backend con 187 pruebas ejecutadas correctas y una prueba opcional omitida; después, 49 pruebas dirigidas correctas. Frontend: 125 pruebas correctas y compilación de producción correcta.
 
 Para ejecutar los tests NoSQL definir `DYNAMODB_TEST_ENDPOINT=http://127.0.0.1:18001`. La suite completa requiere además una PostgreSQL de pruebas mediante `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`. Nunca apuntar las pruebas a los datos de AWS.
