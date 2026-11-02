@@ -22,9 +22,14 @@ public final class ProjectPushService implements ProjectPushUseCase {
     private void deliver(Event event){
         try{
             for(var device:devices.recipients(event.projectId())){
-                if(!devices.claim(event.id(),device.fid()))continue;
-                try{sender.send(device.fid(),event);}
-                catch(Exception unavailable){devices.releaseClaim(event.id(),device.fid());}
+                boolean claimed=false;
+                try{
+                    claimed=devices.claim(event.id(),device.fid());
+                    if(claimed)sender.send(device.fid(),event);
+                }catch(Exception unavailable){
+                    if(claimed)try{devices.releaseClaim(event.id(),device.fid());}
+                    catch(RuntimeException cleanupUnavailable){/* Continue with the other recipients. */}
+                }
             }
         }catch(RuntimeException unavailable){/* The canonical diagram/history remains available in the app. */}
     }

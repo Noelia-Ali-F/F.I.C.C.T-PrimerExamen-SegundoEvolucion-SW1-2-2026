@@ -37,4 +37,19 @@ class ProjectPushServiceTest {
     @Test void rejectsInvalidInstallationsBeforeSaving(){
         assertThatThrownBy(()->service.register("noelia","bad / token")).isInstanceOf(IllegalArgumentException.class);verify(devices,never()).register(anyString(),anyString());
     }
+    @Test void failedClaimForOneRecipientDoesNotSkipTheNextDevice()throws Exception{
+        when(devices.recipients("p")).thenReturn(List.of(new Device("fid-broken","a"),new Device("fid-working","b")));
+        when(devices.claim("event-001","fid-broken")).thenThrow(new IllegalStateException("temporary database failure"));
+        when(devices.claim("event-001","fid-working")).thenReturn(true);
+        service.notifyChange(event);queue.remove(0).run();
+        verify(sender).send("fid-working",event);verify(sender,never()).send("fid-broken",event);
+    }
+    @Test void failedCleanupOfOneDeliveryDoesNotSkipOtherRecipients()throws Exception{
+        when(devices.recipients("p")).thenReturn(List.of(new Device("fid-broken","a"),new Device("fid-working","b")));
+        when(devices.claim(anyString(),anyString())).thenReturn(true);
+        doThrow(new IllegalStateException("provider offline")).when(sender).send("fid-broken",event);
+        doThrow(new IllegalStateException("cleanup offline")).when(devices).releaseClaim("event-001","fid-broken");
+        service.notifyChange(event);assertThatCode(()->queue.remove(0).run()).doesNotThrowAnyException();
+        verify(sender).send("fid-working",event);
+    }
 }

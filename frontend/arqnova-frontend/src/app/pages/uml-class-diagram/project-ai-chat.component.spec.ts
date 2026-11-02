@@ -21,6 +21,21 @@ describe('panel de conversación del proyecto',()=>{
   const {component,service}=setup();component.instruction='Primera';component.send();component.instruction='Segunda';component.send();
   expect((service.send.mock.calls[0] as unknown[])[1]).not.toBe((service.send.mock.calls[1] as unknown[])[1]);
  });
+ it('conserva el borrador nuevo si la confirmación del envío anterior llega tarde',()=>{
+  const {component,service}=setup();const response=new Subject<any>();
+  service.send.mockReturnValue(response as any);
+  component.instruction='Primera pregunta';component.send();
+  component.instruction='Segunda pregunta';
+  response.next({requestId:'request-first',state:'PENDING',createdAt:'2026-11-02T12:00:00Z',updatedAt:'2026-11-02T12:00:00Z'});
+  expect(component.instruction).toBe('Segunda pregunta');expect(component.sending()).toBe(false);
+ });
+ it('limpia el texto confirmado cuando el usuario no empezó otro borrador',()=>{
+  const {component,service}=setup();const response=new Subject<any>();
+  service.send.mockReturnValue(response as any);
+  component.instruction='Primera pregunta';component.send();
+  response.next({requestId:'request-first',state:'PENDING',createdAt:'2026-11-02T12:00:00Z',updatedAt:'2026-11-02T12:00:00Z'});
+  expect(component.instruction).toBe('');
+ });
  it('ofrece modelado únicamente cuando el servidor lo habilita',()=>{
   const {fixture,component}=setup(true,['ASK','REVIEW','MODEL']);
   expect(fixture.nativeElement.textContent).toContain('Modificar diagrama guardado');
