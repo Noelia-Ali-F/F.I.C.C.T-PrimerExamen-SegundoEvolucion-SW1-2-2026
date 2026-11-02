@@ -33,3 +33,6 @@ La creación de Editorial utilizó el intérprete determinista: **cero llamadas 
 ## Pendiente
 
 CU11 todavía no está validado de extremo a extremo: Firebase existe, pero el envío push permanece desactivado en AWS y falta proporcionar la credencial de servicio del backend, habilitar el envío y comprobar entrega en primer/segundo plano. Esta prueba no activa permisos de notificación ni afirma recepción real de push. Tampoco sustituye toda la matriz de regresión de CU9/CU10 (paginación extensa, interrupciones de red y varios dispositivos).
+
+
+CU11 se activo y probo posteriormente en este mismo telefono: [resultados de notificaciones](notificaciones-push-aws.md). La seccion Pendiente anterior corresponde al estado de la primera prueba del visor.

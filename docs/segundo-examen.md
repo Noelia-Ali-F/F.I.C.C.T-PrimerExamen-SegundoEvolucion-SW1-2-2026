@@ -128,3 +128,6 @@ Pruebas web posteriores al despliegue y ampliación del disco: [resultados del 2
 
 
 Actualizacion Android: se construyo e instalo el APK debug en un Samsung Android 13 por ADB inalambrico y se comprobo acceso real a AWS, visor y actividad. Ver [prueba fisica del movil](pruebas-movil-android-2026-11-02.md). CU11 push sigue pendiente de activacion y entrega real. Las referencias anteriores a APK no construido describen la etapa previa.
+
+
+Actualizacion CU11: push esta habilitado en AWS con credencial de servicio externa. Se verifico entrega real en Android 13 con la app abierta y en segundo plano, apertura del diagrama confirmada por el usuario, desactivacion, reactivacion y baja al cerrar sesion. Ver [notificaciones push AWS](notificaciones-push-aws.md). Las referencias previas a push pendiente describen la etapa anterior.

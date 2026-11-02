@@ -78,3 +78,6 @@ para los comandos de backend, emulador, teléfono físico y credenciales Firebas
 ## Android fisico y AWS
 
 El primer APK debug ya se compilo e instalo por ADB inalambrico en Android 13. Para usar el visor con AWS: `fvm flutter run -d <dispositivo> --dart-define=UML_API_BASE_URL=https://18-116-164-204.sslip.io`. Requiere Java 17. Ver [resultado y preparacion Windows](../../docs/pruebas-movil-android-2026-11-02.md). Push sigue pendiente de activacion en el servidor.
+
+
+Actualizacion push: ya esta habilitado en AWS y probado en primer y segundo plano en Android 13. Iniciar sesion en Ver mis proyectos UML y pulsar Activar notificaciones para registrar esta instalacion con la cuenta actual. Ver [CU11](../../docs/notificaciones-push-aws.md).
