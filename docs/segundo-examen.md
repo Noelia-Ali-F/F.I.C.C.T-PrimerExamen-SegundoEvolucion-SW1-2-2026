@@ -113,3 +113,9 @@ Por indicación del usuario, la compilación del APK y la prueba en un teléfono
 Validación final del código: **230 pruebas backend correctas y una opcional omitida**, **30 pruebas Flutter correctas**, `flutter analyze` sin incidencias y la compilación Angular verificada con **131 pruebas correctas**. OAuth, FCM y los proveedores de IA se simularon. No se afirma haber probado recepción real de push ni haber construido el APK.
 
 La guía [Puesta en marcha local del segundo examen](puesta-en-marcha-local-segundo-examen.md) contiene los pasos concretos para clonar, levantar los servicios y continuar esas verificaciones.
+
+## Clave independiente para el chat del segundo examen
+
+`AI_CHAT_GROQ_API_KEY` selecciona un transporte Groq independiente para ASK, REVIEW y las operaciones MODEL que requieren interpretación IA. `AI_CHAT_GROQ_MODEL` permite elegir su modelo (predeterminado `openai/gpt-oss-120b`). El editor previo, imágenes y voz mantienen las credenciales anteriores. Los tiempos de espera por cuota se conservan separados; un fallo del chat no consume las claves del pipeline anterior. Sin la variable nueva se conserva la compatibilidad con la configuración anterior. Las instrucciones deterministas siguen sin consumir APIs.
+
+La clave se guarda únicamente en configuración de ejecución, fuera de Git. Proyectos distintos de una misma organización Groq siguen sujetos a sus límites generales; separar las claves no garantiza cuota adicional.

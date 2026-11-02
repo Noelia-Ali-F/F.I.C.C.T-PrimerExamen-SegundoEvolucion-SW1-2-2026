@@ -21,7 +21,7 @@ public class HexagonalConfiguration {
  @Bean UsuarioConsultaService usuarioConsultaService(UserStore users){return new UsuarioConsultaService(users);}
  @Bean CodigoSeguimientoGenerator codigoSeguimientoGenerator(){return new CodigoSeguimientoGenerator();}
  @Bean UmlElementLockService umlElementLockService(Environment env){return new UmlElementLockService(env.getProperty("uml.collaboration.lock-ttl-ms",Long.class,45000L));}
- @Bean UmlAiCommandService umlAiCommandService(UmlInterpretationPort ai){return new UmlAiCommandServiceImpl(ai);}
+ @Bean @org.springframework.context.annotation.Primary UmlAiCommandService umlAiCommandService(UmlInterpretationPort ai){return new UmlAiCommandServiceImpl(ai);}
  @Bean com.arqnova.servicios.puertos.entrada.UmlImageAnalysisUseCase umlImageAnalysis(UmlInterpretationPort ai){return new UmlImageAnalysisService(ai);}
  @Bean UmlBackendGeneratorService umlBackendGeneratorService(BackendGenerationPort output){return new UmlBackendGeneratorServiceImpl(output);}
  @Bean UmlFlutterGeneratorService umlFlutterGeneratorService(FlutterGenerationPort output){return new UmlFlutterGeneratorServiceImpl(output);}

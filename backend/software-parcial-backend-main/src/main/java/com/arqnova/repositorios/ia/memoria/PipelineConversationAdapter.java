@@ -17,7 +17,7 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
     private final ObjectMapper json;
     private final UmlAiCommandService modeling;
     public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json){this(pipeline,json,null);}
-    @Autowired public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json,UmlAiCommandService modeling){this.pipeline=pipeline;this.json=json;this.modeling=modeling;}
+    @Autowired public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json,@org.springframework.beans.factory.annotation.Qualifier("conversationModeling") UmlAiCommandService modeling){this.pipeline=pipeline;this.json=json;this.modeling=modeling;}
     public Answer answer(Turn turn,Context context)throws Exception{
         var graph=compactGraph(context.diagram());
         String model=json.writeValueAsString(graph);

@@ -19,6 +19,9 @@ import java.util.concurrent.*;
 
 @Configuration
 public class AiMemoryConfiguration {
+    @Bean("conversationModeling") com.arqnova.servicios.UmlAiCommandService conversationModeling(com.arqnova.repositorios.ia.OpenAiUmlInterpreter ai){
+        return new com.arqnova.servicios.impl.UmlAiCommandServiceImpl(ai.forConversations());
+    }
     @Bean @Profile("dynamodb") AiModelMutationPort unavailableDynamoModeling(){return new AiModelMutationPort(){
         public boolean enabled(){return false;}
         public Optional<Applied> find(Turn turn){return Optional.empty();}

@@ -27,6 +27,9 @@ public class UmlAiProviderPipeline {
     @Value("${GROQ_BASE_URL:https://api.groq.com/openai/v1}") private String groqBaseUrl="https://api.groq.com/openai/v1";
     @Value("${AI_PROVIDER_TIMEOUT_SECONDS:22}") private int timeoutSeconds=22;
     @Value("${GROQ_IMAGE_MAX_TOKENS:8192}") private int groqImageMaxTokens=8192;
+    @Value("${AI_CHAT_GROQ_API_KEY:}") private String conversationKey="";
+    @Value("${AI_CHAT_GROQ_MODEL:openai/gpt-oss-120b}") private String conversationModel="openai/gpt-oss-120b";
+    private UmlAiProviderPipeline conversationPipeline;
     private final ObjectMapper mapper;
     private final HttpClient http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     // Each Gemini credential belongs to an independent account/project.
@@ -43,7 +46,19 @@ public class UmlAiProviderPipeline {
 
     /** Separate bounded output budget for shared conversations; legacy UML/image calls retain their limits. */
     public Result generateConversation(String prompt,Map<String,Object> schema,int maxTokens) throws Exception {
-        return generateWithBudget(prompt,schema,null,Math.max(256,Math.min(2048,maxTokens)));
+        return forConversations().generateWithBudget(prompt,schema,null,Math.max(256,Math.min(2048,maxTokens)));
+    }
+
+    /** Dedicated chat credentials and cooldowns; never replace the legacy editor/image pipeline. */
+    public synchronized UmlAiProviderPipeline forConversations() {
+        if(conversationKey.isBlank())return this;
+        if(conversationPipeline==null){
+            var isolated=new UmlAiProviderPipeline(mapper);
+            isolated.groqKey=conversationKey.trim();isolated.groqModel=conversationModel;
+            isolated.groqBaseUrl=groqBaseUrl;isolated.timeoutSeconds=timeoutSeconds;
+            conversationPipeline=isolated;
+        }
+        return conversationPipeline;
     }
 
     private Result generateWithBudget(String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
