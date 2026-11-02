@@ -12,6 +12,22 @@ Copy-Item .env.example .env
 
 Para la ejecución local se necesitan Docker Compose y Flutter. La compilación Android requiere además Java 17, Android SDK y un dispositivo o emulador con Google Play; el móvil con Firebase requiere Android 7.0/API 24 o posterior. Esas herramientas Android no se instalaron en esta etapa.
 
+### Flutter con FVM en Windows
+
+El archivo `mobile/arqnova-mobile/.fvmrc` fija Flutter **3.29.3** (Dart **3.7.2**). Instalar [FVM](https://fvm.app/documentation/getting-started/installation) y preparar esa versión desde el directorio móvil:
+
+```powershell
+cd mobile/arqnova-mobile
+fvm install 3.29.3
+fvm use 3.29.3
+fvm flutter --version
+cd ../..
+```
+
+Si Windows informa que no puede crear enlaces simbólicos, habilitar el modo de desarrollador de Windows o configurar una unión de directorio local para `.fvm/flutter_sdk` hacia la versión instalada. La carpeta `.fvm` es local y no se sube a Git. En VS Code, `dart.flutterSdkPath` debe apuntar a `.fvm/flutter_sdk`.
+
+FVM administra Flutter; Android SDK se instala por separado y requiere aceptar la licencia de Google. No se necesita instalar estas herramientas en la instancia AWS.
+
 ## 2. Backend, web y memoria NoSQL locales
 
 ```powershell
@@ -31,10 +47,10 @@ Crear una cuenta y un proyecto desde la web local antes de entrar desde el móvi
 
 ```powershell
 cd mobile/arqnova-mobile
-flutter pub get
-flutter analyze
-flutter test
-flutter run --dart-define=UML_API_BASE_URL=http://10.0.2.2:8080
+fvm flutter pub get
+fvm flutter analyze
+fvm flutter test
+fvm flutter run --dart-define=UML_API_BASE_URL=http://10.0.2.2:8080
 ```
 
 `10.0.2.2` corresponde al equipo anfitrión desde el emulador Android. En un teléfono físico sustituirlo por la IP local del equipo donde corre el backend, accesible desde la misma red.
@@ -71,7 +87,7 @@ El envío es de mejor esfuerzo: un fallo de Firebase no revierte un diagrama ni 
 
 Cuando el entorno local esté preparado:
 
-1. Ejecutar o compilar la app: `flutter build apk --debug --dart-define=UML_API_BASE_URL=http://IP_LOCAL:8080`.
+1. Ejecutar o compilar la app: `fvm flutter build apk --debug --dart-define=UML_API_BASE_URL=http://IP_LOCAL:8080`.
 2. Iniciar sesión en el visor y activar el permiso de notificaciones.
 3. Modificar un proyecto compartido desde la web local y comprobar autor, diagrama e historial en el móvil.
 4. Comprobar una notificación en primer plano, otra con la app en segundo plano y el cierre de sesión.
