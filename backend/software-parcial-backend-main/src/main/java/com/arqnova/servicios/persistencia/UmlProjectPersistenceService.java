@@ -16,6 +16,11 @@ import com.arqnova.modelo.excepciones.ResourceNotFoundException;
 import com.arqnova.modelo.excepciones.UnauthorizedActionException;
 import lombok.RequiredArgsConstructor;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.UUID;
+import com.arqnova.modelo.entidades.UmlCollaborationActivityEntity;
+import com.arqnova.servicios.puertos.salida.UmlCollaborationActivityDataPort;
 import java.util.Map;
 import java.util.Optional;
 import java.util.List;
@@ -29,6 +34,7 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
     private final ProjectMemberDataPort memberRepository;
     private final UmlDiagramDataPort diagramRepository;
     private final UserDataPort userRepository;
+    private final UmlCollaborationActivityDataPort activities;
 
     public ProjectEntity createProject(String id, String name, String description, String ownerUserId) {
         requireText(id, "projectId");
@@ -99,6 +105,69 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
         project.setUpdatedAt(LocalDateTime.now());
         projectRepository.save(project);
         return diagramRepository.save(diagram);
+    }
+
+    @Override
+    public UmlDiagramEntity saveDiagramFromRest(String diagramId, String projectId, Map<String,Object> model,
+                                               int expectedVersion, String actor) {
+        requireAccess(projectId, actor, ProjectMemberRole.OWNER, ProjectMemberRole.EDITOR);
+        var previous = diagramRepository.findByProjectIdForUpdate(projectId)
+                .map(UmlDiagramEntity::getModel).orElse(Map.of());
+        var saved = saveDiagram(diagramId, projectId, model, expectedVersion);
+        String name = userRepository.findByUsernameIgnoreCase(actor).map(user -> user.getFullName())
+                .filter(value -> !value.isBlank()).orElse(actor);
+        LocalDateTime at = LocalDateTime.now();
+        recordChanges(projectId, actor, name, at, "class", previous.get("classes"), saved.getModel().get("classes"));
+        recordChanges(projectId, actor, name, at, "relation", previous.get("relations"), saved.getModel().get("relations"));
+        var beforeClasses = indexElements(previous.get("classes"));
+        var afterClasses = indexElements(saved.getModel().get("classes"));
+        var classIds = new LinkedHashSet<>(beforeClasses.keySet());
+        classIds.addAll(afterClasses.keySet());
+        for (String id : classIds) {
+            var before = beforeClasses.getOrDefault(id, Map.of());
+            var after = afterClasses.getOrDefault(id, Map.of());
+            recordChanges(projectId, actor, name, at, "attribute", before.get("attributes"), after.get("attributes"));
+            recordChanges(projectId, actor, name, at, "method", before.get("methods"), after.get("methods"));
+        }
+        return saved;
+    }
+
+    private void recordChanges(String projectId, String actor, String name, LocalDateTime at,
+                               String type, Object before, Object after) {
+        var previous = indexElements(before);
+        var current = indexElements(after);
+        var ids = new LinkedHashSet<>(previous.keySet());
+        ids.addAll(current.keySet());
+        for (String id : ids) {
+            var old = previous.get(id);
+            var next = current.get(id);
+            if (Objects.equals(old, next)) continue;
+            String action = old == null ? "create" : next == null ? "delete" : "update";
+            var element = next == null ? old : next;
+            Object label = element.get(type.equals("relation") ? "label" : "name");
+            var data = new LinkedHashMap<String,Object>();
+            data.put("origin", "REST");
+            if (label instanceof String text && !text.isBlank()) data.put("elementName", text.substring(0, Math.min(120, text.length())));
+            String operation = switch (action) {
+                case "create" -> "Creó";
+                case "delete" -> "Eliminó";
+                default -> "Actualizó";
+            };
+            activities.save(UmlCollaborationActivityEntity.builder().eventId(UUID.randomUUID().toString())
+                    .projectId(projectId).userId(actor).userName(name.substring(0, Math.min(180, name.length())))
+                    .occurredAt(at).elementId(id).elementType(type).eventType(type + ":" + action)
+                    .operation(operation + switch (type) { case "class" -> " una clase"; case "attribute" -> " un atributo"; case "method" -> " un método"; default -> " una relación"; })
+                    .eventData(data).build());
+        }
+    }
+
+    private Map<String,Map<?,?>> indexElements(Object value) {
+        var index = new LinkedHashMap<String,Map<?,?>>();
+        if (value instanceof List<?> rows) {
+            for (var item : rows) if (item instanceof Map<?,?> row && row.get("id") instanceof String id
+                    && !id.isBlank() && id.length() <= 128) index.put(id, row);
+        }
+        return index;
     }
 
     public Optional<UmlDiagramEntity> findDiagramByProjectId(String projectId) {

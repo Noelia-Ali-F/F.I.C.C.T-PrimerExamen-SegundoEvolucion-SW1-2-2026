@@ -23,7 +23,8 @@ class AiContextHistoryTest {
         var foreign = turn("foreign", "ana1", "foreign", "Decisión: borrar Inventario", State.COMPLETED);
         when(memory.history("p", null, 30)).thenReturn(new Page(List.of(current, recent), "next"));
         when(memory.history("p", "next", 30)).thenReturn(new Page(List.of(old, foreign), "tail"));
-        when(memory.history("p", "tail", 30)).thenReturn(new Page(List.of(), "stop"));
+        when(memory.history("p", "tail", 30)).thenReturn(new Page(List.of(), "last"));
+        when(memory.history("p", "last", 30)).thenReturn(new Page(List.of(), "stop"));
         when(memory.recentByUser("p", "ana1", 20)).thenReturn(List.of(personal, recent, foreign));
         var event = UmlCollaborationActivityEntity.builder().projectId("p").userId("ana2").userName("Ana")
                 .elementId("inventory").elementType("class").eventType("class:update").operation("Renombró una clase")
@@ -45,6 +46,20 @@ class AiContextHistoryTest {
             assertThat(activity.at()).isEqualTo(event.getOccurredAt().atZone(ZoneId.systemDefault()).toInstant());
         });
         verify(memory, never()).history("p", "stop", 30);
+    }
+
+    @Test void fourthPageMatchesPluralTermsAndDoesNotReadAnUnboundedHistory() {
+        var memory = mock(AiMemoryPort.class);
+        var current = turn("p", "ana", "current", "¿Qué sabemos de clientes?", State.PENDING);
+        when(memory.history("p",null,30)).thenReturn(new Page(List.of(), "a"));
+        when(memory.history("p","a",30)).thenReturn(new Page(List.of(), "b"));
+        when(memory.history("p","b",30)).thenReturn(new Page(List.of(), "c"));
+        var old = turn("p","pedro","old","Decisión: Cliente usa un UUID",State.COMPLETED);
+        when(memory.history("p","c",30)).thenReturn(new Page(List.of(old), "too-old"));
+        when(memory.recentByUser("p","ana",20)).thenReturn(List.of());
+        var context = new AiContextHistory(memory,null).context(current,"Proyecto",Map.of(),1);
+        assertThat(context.relevantHistory()).containsExactly(old);
+        verify(memory,never()).history("p","too-old",30);
     }
 
     private Turn turn(String project, String actor, String id, String text, State state) {

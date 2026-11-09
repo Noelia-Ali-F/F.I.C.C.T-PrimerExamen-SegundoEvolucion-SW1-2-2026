@@ -70,6 +70,67 @@ class PipelineConversationAdapterTest {
         assertThat(data.at("/activities/0/elementName").asText()).isEqualTo("Inventario");
     }
 
+    @Test void directAuthorshipUsesOnlyMatchingActivityAndReportsMissingAuthor() throws Exception {
+        var at = Instant.parse("2026-10-01T12:00:00Z");
+        var ask = new Turn("request-who","p","ana","Ana",Mode.ASK,"¿Quién creó Cliente?",
+                State.PENDING,null,null,3,at,at);
+        var misleading = new Turn("claim-01","p","pedro","Pedro",Mode.ASK,"Yo creé Cliente",State.COMPLETED,null,null,3,at,at);
+        var unknown = new Activity(null,null,at,"cliente","Cliente","class","class:create","Creó");
+        var missing = new Context("p","Biblioteca","ana",Map.of(),3,List.of(misleading),List.of(),List.of(),List.of(unknown));
+        assertThat(adapter.answer(ask,missing).text()).contains("No consta").doesNotContain("Pedro");
+        var actual = new Activity("carlos","Carlos",at,"cliente","Cliente","class","class:create","Creó");
+        var verified = new Context("p","Biblioteca","ana",Map.of(),3,List.of(misleading),List.of(),List.of(),List.of(actual));
+        assertThat(adapter.answer(ask,verified).text()).contains("Carlos",at.toString()).doesNotContain("Pedro");
+        verifyNoInteractions(pipeline);
+    }
+
+    @Test void unsupportedAuthorshipIsRemovedWhileVerifiedClaimsAndAdviceRemain() throws Exception {
+        var at = Instant.parse("2026-10-01T12:00:00Z");
+        var event = new Activity("carlos","Carlos",at,"cliente","Cliente","class","class:create","Creó");
+        var context = new Context("p","Biblioteca","noelia",Map.of(),3,List.of(),List.of(),List.of(),List.of(event));
+        when(pipeline.generateConversation(anyString(),anyMap(),anyInt())).thenReturn(new UmlAiProviderPipeline.Result(
+                "{\"answer\":\"Pedro creó la clase Cliente. Carlos creó la clase Cliente. Conviene revisar las multiplicidades.\",\"findings\":[]}",
+                "GROQ","fake",false));
+        var answer = adapter.answer(turn(),context);
+        assertThat(answer.text()).doesNotContain("Pedro creó").contains("No consta evidencia","Carlos creó","Conviene revisar");
+    }
+
+    @Test void contextualRenameRejectsProviderOperationForDifferentElement() throws Exception {
+        var interpreter = mock(com.arqnova.servicios.UmlAiCommandService.class);
+        var wrong = com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_UPDATE")
+                .targetId("other").parameters(Map.of("name","Comprador")).build();
+        when(interpreter.interpret(any())).thenReturn(com.arqnova.modelo.dto.response.UmlAiCommandResponse.builder()
+                .status("READY").operations(List.of(wrong)).build());
+        var at = Instant.parse("2026-10-01T12:00:00Z");
+        var request = new Turn("request-model","p","ana","Ana",Mode.MODEL,"Renombra la clase que creó Carlos a Comprador",
+                State.PENDING,null,null,3,at,at);
+        var graph = Map.<String,Object>of("classes",List.of(Map.of("id","cliente","name","Cliente"),Map.of("id","other","name","Otra")));
+        var evidence = new Activity("carlos","Carlos",at,"cliente","Cliente","class","class:create","Creó");
+        var context = new Context("p","Biblioteca","ana",graph,3,List.of(),List.of(),List.of(),List.of(evidence));
+        var result = new PipelineConversationAdapter(pipeline,new ObjectMapper(),interpreter).answer(request,context);
+        assertThat(result.operations()).isEmpty();
+        assertThat(result.text()).contains("no coincide");
+        verify(interpreter).interpret(any());
+    }
+
+    @Test void contextualRenameAcceptsOnlyVerifiedElementAndRequestedName() throws Exception {
+        var interpreter = mock(com.arqnova.servicios.UmlAiCommandService.class);
+        var correct = com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_UPDATE")
+                .targetId("cliente").parameters(Map.of("name","Comprador")).build();
+        when(interpreter.interpret(any())).thenReturn(com.arqnova.modelo.dto.response.UmlAiCommandResponse.builder()
+                .status("READY").operations(List.of(correct)).build());
+        var at = Instant.parse("2026-10-01T12:00:00Z");
+        var request = new Turn("request-model","p","ana","Ana",Mode.MODEL,"Renombra la clase que creó Carlos a Comprador",
+                State.PENDING,null,null,3,at,at);
+        var graph = Map.<String,Object>of("classes",List.of(Map.of("id","cliente","name","Cliente")));
+        var evidence = new Activity("carlos","Carlos",at,"cliente","Cliente","class","class:create","Creó");
+        var context = new Context("p","Biblioteca","ana",graph,3,List.of(),List.of(),List.of(),List.of(evidence));
+        var adapter = new PipelineConversationAdapter(pipeline,new ObjectMapper(),interpreter);
+        assertThat(adapter.answer(request,context).operations()).containsExactly(correct);
+        correct.setParameters(Map.of("name","Comprador","description","Cambio adicional"));
+        assertThat(adapter.answer(request,context).operations()).isEmpty();
+    }
+
     @Test void modelingReusesEstablishedInterpreterAndKeepsOperationsForServerValidation()throws Exception{
         var interpreter=mock(com.arqnova.servicios.UmlAiCommandService.class);
         var operation=com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_CREATE").parameters(Map.of("name","Cliente")).build();

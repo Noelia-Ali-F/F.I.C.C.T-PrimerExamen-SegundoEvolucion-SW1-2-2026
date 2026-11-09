@@ -34,14 +34,14 @@ final class AiContextHistory {
         individual.forEach(other -> seen.add(other.requestId()));
         var candidates = new ArrayList<>(first.turns());
         String cursor = first.nextCursor();
-        for (int i = 0; !terms.isEmpty() && cursor != null && i < 2; i++) {
+        for (int i = 0; !terms.isEmpty() && cursor != null && i < 3; i++) {
             var page = memory.history(turn.projectId(), cursor, 30);
             candidates.addAll(page.turns());
             cursor = page.nextCursor();
         }
         var relevant = candidates.stream().filter(other -> visible(turn, other) && seen.add(other.requestId()))
-                .map(other -> Map.entry(other, score(terms, other.instruction() + " "
-                        + (other.answer() == null ? "" : other.answer().text()) + " " + other.authorName())))
+                .map(other -> Map.entry(other, 2 * score(terms, other.instruction() + " " + other.authorName())
+                        + score(terms, other.answer() == null ? "" : other.answer().text())))
                 .filter(entry -> entry.getValue() > 0)
                 .sorted(Map.Entry.<Turn,Integer>comparingByValue().reversed())
                 .limit(3).map(Map.Entry::getKey).toList();
@@ -58,6 +58,7 @@ final class AiContextHistory {
                 .filter(row -> turn.projectId().equals(row.getProjectId()) && row.getOccurredAt() != null)
                 .map(row -> {
                     String name = names.get(row.getElementId());
+                    if (name == null && row.getEventData() != null && row.getEventData().get("elementName") instanceof String stored) name = stored;
                     return Map.entry(toActivity(row, name), 2 * score(terms, row.getOperation() + " "
                             + name + " " + row.getElementId() + " " + row.getUserName())
                             + (turn.authorId().equals(row.getUserId()) ? 1 : 0));
@@ -80,7 +81,7 @@ final class AiContextHistory {
         String normal = Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
         var words = new LinkedHashSet<String>();
         for (String word : normal.split("[^a-z0-9]+")) {
-            if (word.length() >= 4 && !COMMON.contains(word)) words.add(word);
+            if (word.length() >= 4 && !COMMON.contains(word)) words.add(term(word));
             if (words.size() == 16) break;
         }
         return words;
@@ -89,8 +90,12 @@ final class AiContextHistory {
     private int score(Set<String> terms, String text) {
         if (terms.isEmpty()) return 0;
         String normalized = Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
-        var tokens = new HashSet<>(Arrays.asList(normalized.split("[^a-z0-9]+")));
+        var tokens = Arrays.stream(normalized.split("[^a-z0-9]+")).map(AiContextHistory::term).collect(java.util.stream.Collectors.toSet());
         return (int) terms.stream().filter(tokens::contains).count();
+    }
+
+    private static String term(String word) {
+        return word.length() >= 5 && word.endsWith("s") ? word.substring(0, word.length() - 1) : word;
     }
 
     private void collectNames(Object value, Map<String,String> names) {

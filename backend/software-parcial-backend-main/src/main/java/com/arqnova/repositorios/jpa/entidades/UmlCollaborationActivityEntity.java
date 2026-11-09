@@ -24,7 +24,7 @@ import java.util.Map;
 public class UmlCollaborationActivityEntity {
     @Id @Column(name = "event_id", length = 64, nullable = false, updatable = false)
     private String eventId;
-    @Column(name = "session_id", length = 64, nullable = false, updatable = false)
+    @Column(name = "session_id", length = 64, updatable = false)
     private String sessionId;
     @Column(name = "project_id", length = 128, nullable = false, updatable = false)
     private String projectId;

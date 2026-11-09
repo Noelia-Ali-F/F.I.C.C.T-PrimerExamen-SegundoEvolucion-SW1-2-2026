@@ -43,11 +43,12 @@ public class HexagonalConfiguration {
   });
   return (UmlCollaborationService)serialized.getProxy();
  }
- @Bean UmlProjectPersistenceService umlProjectPersistenceService(ProjectDataPort projects,ProjectMemberDataPort members,UmlDiagramDataPort diagrams,UserDataPort users,PlatformTransactionManager transactions){
+ @Bean UmlProjectPersistenceService umlProjectPersistenceService(ProjectDataPort projects,ProjectMemberDataPort members,UmlDiagramDataPort diagrams,UserDataPort users,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions){
   Properties policies=new Properties();
   policies.setProperty("createProject","PROPAGATION_REQUIRED");
   policies.setProperty("findProjectById","PROPAGATION_REQUIRED,readOnly");
   policies.setProperty("saveDiagram","PROPAGATION_REQUIRED");
+  policies.setProperty("saveDiagramFromRest","PROPAGATION_REQUIRED");
   policies.setProperty("findDiagramByProjectId","PROPAGATION_REQUIRED,readOnly");
   policies.setProperty("addMember","PROPAGATION_REQUIRED");
   policies.setProperty("acceptInvitation","PROPAGATION_REQUIRED");
@@ -56,7 +57,7 @@ public class HexagonalConfiguration {
   policies.setProperty("requireAccess","PROPAGATION_REQUIRED,readOnly");
   policies.setProperty("updateProject","PROPAGATION_REQUIRED");
   policies.setProperty("deleteProjectAuthorized","PROPAGATION_REQUIRED");
-  return transactional(new UmlProjectPersistenceService(projects,members,diagrams,users),transactions,policies);
+  return transactional(new UmlProjectPersistenceService(projects,members,diagrams,users,activities),transactions,policies);
  }
  @SuppressWarnings("unchecked") private <T>T transactional(T target,PlatformTransactionManager manager,Properties policies){
   TransactionProxyFactoryBean factory=new TransactionProxyFactoryBean();

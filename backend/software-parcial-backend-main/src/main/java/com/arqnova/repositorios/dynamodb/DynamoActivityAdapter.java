@@ -10,10 +10,10 @@ import java.util.*;
 public class DynamoActivityAdapter extends DynamoEntityAdapter<UmlCollaborationActivityEntity, String> implements UmlCollaborationActivityDataPort {
     public DynamoActivityAdapter(DynamoDocumentStore store) { super(store, "ACTIVITY", UmlCollaborationActivityEntity.class, UmlCollaborationActivityEntity::getEventId, v -> v); }
     protected void prepare(UmlCollaborationActivityEntity v, UmlCollaborationActivityEntity old) {
-        store.requireParent("PROJECT", v.getProjectId()); store.requireParent("SESSION", v.getSessionId());
+        store.requireParent("PROJECT", v.getProjectId()); if (v.getSessionId() != null) store.requireParent("SESSION", v.getSessionId());
     }
     public List<UmlCollaborationActivityEntity> findTop100BySessionIdOrderByOccurredAtDesc(String id) {
-        return findAll().stream().filter(v -> v.getSessionId().equals(id)).sorted(Comparator.comparing(UmlCollaborationActivityEntity::getOccurredAt).reversed()).limit(100).toList();
+        return findAll().stream().filter(v -> id.equals(v.getSessionId())).sorted(Comparator.comparing(UmlCollaborationActivityEntity::getOccurredAt).reversed()).limit(100).toList();
     }
     public List<UmlCollaborationActivityEntity> projectHistory(String project,java.time.LocalDateTime before,String beforeId,int limit){
         return findAll().stream().filter(v->project.equals(v.getProjectId()))

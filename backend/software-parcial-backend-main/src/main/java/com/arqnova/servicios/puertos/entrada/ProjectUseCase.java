@@ -26,6 +26,7 @@ public interface ProjectUseCase {
  UmlDiagramEntity saveDiagram(String diagramId, String projectId, Map<String, Object> model) ;
  UmlDiagramEntity saveDiagram(String diagramId, String projectId, Map<String, Object> model,
                                         Integer expectedVersion) ;
+ UmlDiagramEntity saveDiagramFromRest(String diagramId, String projectId, Map<String,Object> model, int expectedVersion, String actor);
  Optional<UmlDiagramEntity> findDiagramByProjectId(String projectId) ;
  ProjectMemberEntity addMember(String projectId, String userId, ProjectMemberRole role) ;
  ProjectMemberEntity acceptInvitation(String projectId, String userId, ProjectMemberRole invitedRole) ;

@@ -97,11 +97,10 @@ public class UmlProjectController {
     @PutMapping("/{projectId}/diagram")
     public ApiResponse<DiagramResponse> saveDiagram(
             @PathVariable String projectId,
-            @RequestHeader("X-Usuario") String username,
+            java.security.Principal principal,
             @RequestHeader(value = "X-Model-Version", defaultValue = "0") int modelVersion,
             @RequestBody Map<String, Object> model) {
-        service.requireAccess(projectId, username, ProjectMemberRole.OWNER, ProjectMemberRole.EDITOR);
-        UmlDiagramEntity saved = service.saveDiagram("diagram-" + projectId, projectId, model, modelVersion);
+        UmlDiagramEntity saved = service.saveDiagramFromRest("diagram-" + projectId, projectId, model, modelVersion, principal.getName());
         return ApiResponse.ok("Diagrama guardado", diagramResponse(saved));
     }
 

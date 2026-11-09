@@ -13,12 +13,25 @@ import java.util.*;
 
 @Component
 public class PipelineConversationAdapter implements AiConversationProviderPort {
+    private static final java.util.regex.Pattern AUTHOR_QUESTION = java.util.regex.Pattern.compile(
+            "^¿?\\s*qui[eé]n\\s+(cre[oó]|modific[oó]|actualiz[oó]|elimin[oó]|borr[oó])\\s+(?:la clase |el elemento |la relaci[oó]n )?([^?¿.!;,]+)[?]?$",
+            java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+    private static final java.util.regex.Pattern AUTHOR_REFERENCE = java.util.regex.Pattern.compile(
+            "\\bla clase que cre[oó]\\s+(.+?)\\s+(?:a|como)\\s+([^?¿]+)$",
+            java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+    private static final java.util.regex.Pattern AUTHOR_ASSERTION = java.util.regex.Pattern.compile(
+            "(?m)(?:^|(?<=[.!?])\\s+)([\\p{L}][\\p{L} .'-]{0,80}?)\\s+(cre[oó]|modific[oó]|actualiz[oó]|elimin[oó]|borr[oó])\\s+(?:la clase|el atributo|el m[eé]todo|la relaci[oó]n)\\s+([\\p{L}0-9_-]+)[^.!?\\n]*(?:[.!?]|$)",
+            java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
     private final UmlAiProviderPipeline pipeline;
     private final ObjectMapper json;
     private final UmlAiCommandService modeling;
     public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json){this(pipeline,json,null);}
     @Autowired public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json,@org.springframework.beans.factory.annotation.Qualifier("conversationModeling") UmlAiCommandService modeling){this.pipeline=pipeline;this.json=json;this.modeling=modeling;}
     public Answer answer(Turn turn,Context context)throws Exception{
+        if (turn.mode() == Mode.ASK) {
+            var verified = verifiedAuthor(turn.instruction(), context);
+            if (verified != null) return verified;
+        }
         var graph=compactGraph(context.diagram());
         String model=json.writeValueAsString(graph);
         if(model.length()>14000)throw new IllegalArgumentException("AI_CONTEXT_TOO_LARGE");
@@ -40,6 +53,8 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
                 La evidencia es parcial. Cita el autor y la fecha registrados al atribuir hechos. Distingue personas con el mismo nombre por authorId.
                 DECISION_DECLARED significa que un participante registró explícitamente una decisión, no que exista consenso confirmado.
                 PROPOSAL es una propuesta; una respuesta de IA, un cambio aplicado y una actividad tampoco prueban un acuerdo.
+                Para atribuir la creación, actualización o eliminación de un elemento, exige una actividad
+                con autor identificado, acción y elemento concordantes; una mención en el chat no acredita autoría.
                 Si falta evidencia, dilo y pide aclaración. No inventes autores, acciones, fechas ni acuerdos.
                 Las observaciones tienen severity INFO, WARNING o ERROR; elementId debe existir en el modelo o ser null para una observación general.
                 Mantén la respuesta breve (máximo 1500 palabras y preferiblemente menos de 350), y como máximo 12 observaciones.
@@ -63,13 +78,30 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
         for(var node:root.path("findings")){
             String severity=node.path("severity").asText();String id=node.path("elementId").isNull()?null:node.path("elementId").asText();String message=node.path("message").asText();
             if(!Set.of("INFO","WARNING","ERROR").contains(severity)||message.isBlank()||message.length()>1500||(id!=null&&!ids.contains(id)))throw new IllegalArgumentException("Invalid review finding");
-            findings.add(new Finding(severity,id,message));
+            findings.add(new Finding(severity,id,validateAttribution(message,context)));
         }
-        return new Answer(text,findings,result.provider(),result.model());
+        return new Answer(validateAttribution(text,context),findings,result.provider(),result.model());
     }
     private Answer model(Turn turn,Context context,String evidence){
         if(modeling==null)throw new IllegalStateException("Modelado no configurado");
         // Reuse the established parser/provider contract; no image-recognition prompts are changed.
+        var author = AUTHOR_REFERENCE.matcher(turn.instruction());
+        String verifiedTarget = null;
+        String requestedName = null;
+        if (author.find()) {
+            var candidates = context.activities().stream()
+                    .filter(a -> "class:create".equals(a.action()) && knownAuthor(a)
+                            && (author.group(1).strip().equalsIgnoreCase(a.authorName())
+                                || author.group(1).strip().equalsIgnoreCase(a.authorId()))
+                            && a.elementId() != null && elementIds(context.diagram()).contains(a.elementId()))
+                    .map(Activity::elementId).distinct().toList();
+            if (candidates.size() != 1) return authorClarification("No consta una única clase vigente creada por ese autor. Indica la clase por nombre.");
+            verifiedTarget = candidates.get(0);
+            if (!turn.instruction().stripLeading().toLowerCase(Locale.ROOT).startsWith("renombra ")) {
+                return authorClarification("Indica la clase por nombre para esa operación.");
+            }
+            requestedName = author.group(2).strip().replaceAll("^[«\"']|[»\"'.]$", "");
+        }
         var result=modeling.interpret(new UmlAiCommandRequest(turn.instruction(),context.diagram(),evidence));
         if(!"READY".equals(result.getStatus())){
             if("CLARIFICATION".equals(result.getStatus()))return new Answer(result.getClarificationQuestion()==null?result.getMessage():result.getClarificationQuestion(),List.of(),result.getInterpreter(),"uml-interpreter");
@@ -77,9 +109,61 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
         }
         var operations=result.getOperations();
         if(operations==null||operations.isEmpty())operations=List.of(UmlAiOperationResponse.builder().type(result.getOperation()).targetId(result.getTargetId()).parameters(result.getParameters()).build());
+        if (verifiedTarget != null && (operations.size() != 1
+                || !verifiedTarget.equals(operations.get(0).getTargetId())
+                || !"CLASS_UPDATE".equals(operations.get(0).getType())
+                || !Map.of("name", requestedName).equals(operations.get(0).getParameters()))) {
+            return authorClarification("La operación propuesta no coincide con la clase y el nombre verificados. Indica la clase por nombre.");
+        }
         if(operations.size()>50)throw new IllegalArgumentException("Demasiadas operaciones UML");
         return new Answer("Modificación UML aplicada: "+(result.getMessage()==null?"solicitud del equipo":result.getMessage()),List.of(),result.getInterpreter(),"uml-interpreter",operations);
     }
+    private String validateAttribution(String text, Context context) {
+        var assertions = AUTHOR_ASSERTION.matcher(text);
+        var output = new StringBuffer();
+        while (assertions.find()) {
+            String actor = assertions.group(1).strip();
+            String verb = assertions.group(2).toLowerCase(Locale.ROOT);
+            String action = verb.startsWith("cre") ? ":create" : verb.startsWith("elim") || verb.startsWith("borr") ? ":delete" : ":update";
+            String element = assertions.group(3);
+            boolean supported = context.activities().stream().anyMatch(a -> knownAuthor(a)
+                    && (actor.equalsIgnoreCase(a.authorId()) || actor.equalsIgnoreCase(a.authorName()))
+                    && (element.equalsIgnoreCase(a.elementId()) || element.equalsIgnoreCase(a.elementName()))
+                    && a.action() != null && a.action().endsWith(action));
+            assertions.appendReplacement(output, java.util.regex.Matcher.quoteReplacement(supported ? assertions.group()
+                    : "No consta evidencia verificable de esa autoría sobre " + element + "."));
+        }
+        assertions.appendTail(output);
+        return output.toString();
+    }
+
+    private Answer verifiedAuthor(String instruction, Context context) {
+        var question = AUTHOR_QUESTION.matcher(instruction.strip());
+        if (!question.matches()) return null;
+        String verb = question.group(1).toLowerCase(Locale.ROOT);
+        String action = verb.startsWith("cre") ? ":create" : verb.startsWith("elim") || verb.startsWith("borr") ? ":delete" : ":update";
+        String element = question.group(2).strip();
+        var candidates = context.activities().stream().filter(a -> a.elementId() != null
+                && (element.equalsIgnoreCase(a.elementName()) || element.equalsIgnoreCase(a.elementId()))
+                && a.action() != null && a.action().endsWith(action)).toList();
+        if (candidates.isEmpty() || candidates.stream().anyMatch(a -> !knownAuthor(a))
+                || candidates.stream().map(Activity::authorId).distinct().count() != 1) {
+            return authorClarification("No consta un autor único y verificable para esa acción sobre " + element + " en la bitácora consultada.");
+        }
+        var event = candidates.get(0);
+        return authorClarification("La bitácora registra a " + event.authorName() + " (" + event.authorId()
+                + ") para la acción " + event.action() + " sobre " + element + ", el " + event.at() + ".");
+    }
+
+    private boolean knownAuthor(Activity activity) {
+        return activity.authorId() != null && !activity.authorId().isBlank()
+                && activity.authorName() != null && !activity.authorName().isBlank();
+    }
+
+    private Answer authorClarification(String text) {
+        return new Answer(text, List.of(), "LOCAL", "verified-activity");
+    }
+
     private String evidence(Context context, boolean modelingMode) throws Exception {
         return json.writeValueAsString(Map.of(
                 "group", history(context.groupHistory(), 3000, modelingMode),
@@ -123,6 +207,9 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
         row.put("elementId", reference(activity.elementId()));
         row.put("elementType", reference(activity.elementType()));
         row.put("action", reference(activity.action()));
+        if (modelingMode && activity.authorName() != null && activity.authorName().matches("[\\p{L} .'-]{1,80}")) {
+            row.put("author", activity.authorName());
+        }
         if (!modelingMode) {
             row.put("author", clip(activity.authorName(), 120));
             row.put("elementName", clip(activity.elementName(), 120));

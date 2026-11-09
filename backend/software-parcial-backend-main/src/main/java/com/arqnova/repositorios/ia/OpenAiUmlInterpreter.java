@@ -162,7 +162,14 @@ public class OpenAiUmlInterpreter implements com.arqnova.servicios.puertos.salid
                 %s
                 """.formatted(mapper.writeValueAsString(request.getModel()), projectEvidence(request), request.getInstruction());
 
-        String json = sendOpenAi(prompt, schema(), null, model, null);
+        String json;
+        if (request.getProjectEvidence() != null && providerPipeline != null && providerPipeline.isConfigured()) {
+            var response = providerPipeline.generateConversation(prompt, strictSchema(mapper.valueToTree(schema()), true), 1024);
+            providerResult.set(response);
+            json = response.json();
+        } else {
+            json = sendOpenAi(prompt, schema(), null, model, null);
+        }
         if (json.isBlank()) throw new IllegalStateException("OpenAi devolvió una respuesta vacía");
         log.debug("OpenAI UML JSON estructurado bruto (modelo={}): {}", model, json);
         try {

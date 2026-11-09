@@ -165,6 +165,28 @@ class AiConversationHybridIntegrationTest {
             assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(2);assertThat(mutations.find(modelTurn("model-006"))).isEmpty();
         }finally{locks.releaseBySocket("manual-test-socket");}
     }
+    @Test void restSaveRecordsVerifiedActorAndOnlyCommittedChanges() throws Exception {
+        String endpoint = "/api/v1/projects/" + project + "/diagram";
+        String graph = "{\"classes\":[{\"id\":\"cliente\",\"name\":\"Cliente\"}],\"relations\":[],\"author\":\"fake\"}";
+        mvc.perform(put(endpoint).header("Authorization","Bearer "+token).header("X-Model-Version","1")
+                .contentType("application/json").content(graph)).andExpect(status().isOk());
+        var events = activityData.projectHistory(project,null,null,10);
+        assertThat(events).singleElement().satisfies(event -> {
+            assertThat(event.getSessionId()).isNull();
+            assertThat(event.getUserId()).isEqualTo(username);
+            assertThat(event.getEventType()).isEqualTo("class:create");
+            assertThat(event.getElementId()).isEqualTo("cliente");
+            assertThat(event.getOccurredAt()).isNotNull();
+        });
+        mvc.perform(put(endpoint).header("Authorization","Bearer "+token).header("X-Model-Version","1")
+                .contentType("application/json").content(graph)).andExpect(status().isConflict());
+        mvc.perform(put(endpoint).header("Authorization","Bearer "+token).header("X-Model-Version","2")
+                .contentType("application/json").content(graph)).andExpect(status().isOk());
+        mvc.perform(put(endpoint).header("Authorization","Bearer "+outsider).header("X-Model-Version","3")
+                .contentType("application/json").content(graph)).andExpect(status().isForbidden());
+        assertThat(activityData.projectHistory(project,null,null,10)).hasSize(1);
+    }
+
     @Test void projectActivityIsPaginatedAndOnlyVisibleToMembers()throws Exception{
         String sessionId=UUID.randomUUID().toString();var now=java.time.LocalDateTime.now();
         sessions.save(UmlCollaborationSession.builder().id(sessionId).projectId(project).inviteCode(UUID.randomUUID().toString().substring(0,10)).createdBy(username).active(true).model(modelContext(1).diagram()).createdAt(now).updatedAt(now).build());
