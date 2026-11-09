@@ -84,6 +84,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   toolsCollapsed = signal(false);
   inspectorCollapsed = signal(false);
   collaborationModal = signal(false);
+  invitationCopyNotice = signal<{ kind: 'error' | 'success'; text: string } | null>(null);
   shareModal = signal(false);
   collaborativeSession = signal<UmlSession | null>(null);
   participants = signal<UmlParticipant[]>([]);
@@ -438,21 +439,23 @@ export class UmlClassDiagramComponent implements OnDestroy {
   startCollaboration() {
     this.collaborationError.set('');
     this.collaboration.start(this.projectId, this.model().title, this.model()).subscribe({
-      next: session => { this.shareModal.set(false); this.activateSession(session); this.collaborationModal.set(true); },
+      next: session => { this.shareModal.set(false); this.activateSession(session); this.openShare(); },
       error: () => this.collaborationError.set('No se pudo iniciar la sesión colaborativa.')
     });
   }
   openShare() {
+    this.invitationCopyNotice.set(null);
     if (this.collaborativeSession()) this.collaborationModal.set(true);
     else this.shareModal.set(true);
   }
   async copyInvitation() {
     const link = this.invitationLink();
-    if (!link) return this.showNotice('error', 'No existe un enlace de invitación para copiar.');
+    this.invitationCopyNotice.set(null);
+    if (!link) return this.invitationCopyNotice.set({ kind: 'error', text: 'No existe un enlace de invitación para copiar.' });
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard API no disponible');
       await navigator.clipboard.writeText(link);
-      this.showNotice('success', 'Enlace de invitación copiado.');
+      this.invitationCopyNotice.set({ kind: 'success', text: 'Enlace de invitación copiado.' });
     } catch {
       const textarea = document.createElement('textarea');
       textarea.value = link;
@@ -465,9 +468,10 @@ export class UmlClassDiagramComponent implements OnDestroy {
       let copied = false;
       try { copied = document.execCommand('copy'); } catch { copied = false; }
       textarea.remove();
-      this.showNotice(copied ? 'success' : 'error', copied
-        ? 'Enlace de invitación copiado.'
-        : 'No se pudo copiar automáticamente. Selecciona el enlace y cópialo manualmente.');
+      this.invitationCopyNotice.set({
+        kind: copied ? 'success' : 'error',
+        text: copied ? 'Enlace de invitación copiado.' : 'No se pudo copiar automáticamente. Selecciona el enlace y cópialo manualmente.'
+      });
     }
   }
   invitationLink() { const session=this.collaborativeSession(); return session ? `${window.location.origin}/diagrama-clases/${session.projectId}?invite=${session.inviteCode}` : ''; }

@@ -82,8 +82,28 @@ describe('UmlClassDiagramComponent', () => {
     await component.copyInvitation();
 
     expect(copy).toHaveBeenCalledWith('copy');
-    expect(component.notice()).toEqual({ kind: 'success', text: 'Enlace de invitación copiado.' });
+    expect(component.invitationCopyNotice()).toEqual({ kind: 'success', text: 'Enlace de invitación copiado.' });
     expect(document.querySelector('textarea')).toBeNull();
+  });
+
+  it('confirma la copia dentro del cuadro de invitación y limpia el mensaje al reabrirlo', async () => {
+    component.collaborativeSession.set({ sessionId: 's1', projectId: 'project-test', projectName: 'Prueba', inviteCode: 'ABC123', model: component.model() });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    component.openShare();
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('.invite-field button').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith(component.invitationLink());
+    expect(fixture.nativeElement.querySelector('.collaboration-modal [role="status"]').textContent)
+      .toContain('Enlace de invitación copiado.');
+
+    component.collaborationModal.set(false);
+    component.openShare();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.collaboration-modal [role="status"]').textContent.trim()).toBe('');
   });
 
   it('crea una clase y la selecciona', () => {
