@@ -29,17 +29,6 @@ logging:
 
 # Custom application properties
 app:
-  push:
-    enabled: ${PUSH_NOTIFICATIONS_ENABLED:false}
-    firebase-project: ${FIREBASE_PROJECT_ID:arqnova-segundo-examen}
-    credentials-file: ${FIREBASE_CREDENTIALS_FILE:}
-  ai:
-    conversations:
-      modeling-enabled: ${AI_MODELING_ENABLED:false}
-      enabled: ${AI_CONVERSATIONS_ENABLED:false}
-      table: ${AI_MEMORY_TABLE:arqnova-ai-memory}
-      region: ${AWS_REGION:us-east-2}
-      endpoint: ${AI_MEMORY_ENDPOINT:}
   avatars:
     dir: ./uploads/avatars
   cors:

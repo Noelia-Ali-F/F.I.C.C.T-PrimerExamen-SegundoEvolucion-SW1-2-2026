@@ -27,9 +27,6 @@ public class UmlAiProviderPipeline {
     @Value("${GROQ_BASE_URL:https://api.groq.com/openai/v1}") private String groqBaseUrl="https://api.groq.com/openai/v1";
     @Value("${AI_PROVIDER_TIMEOUT_SECONDS:22}") private int timeoutSeconds=22;
     @Value("${GROQ_IMAGE_MAX_TOKENS:8192}") private int groqImageMaxTokens=8192;
-    @Value("${AI_CHAT_GROQ_API_KEY:}") private String conversationKey="";
-    @Value("${AI_CHAT_GROQ_MODEL:openai/gpt-oss-120b}") private String conversationModel="openai/gpt-oss-120b";
-    private UmlAiProviderPipeline conversationPipeline;
     private final ObjectMapper mapper;
     private final HttpClient http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     // Each Gemini credential belongs to an independent account/project.
@@ -41,34 +38,13 @@ public class UmlAiProviderPipeline {
     private List<String> geminiKeys(){return java.util.stream.Stream.of(geminiKey1,geminiKey2,geminiKey3).map(String::trim).filter(k->!k.isEmpty()).distinct().toList();}
 
     public Result generate(String prompt,Map<String,Object> schema,String imageUrl) throws Exception {
-        return generateWithBudget(prompt,schema,imageUrl,8192);
-    }
-
-    /** Separate bounded output budget for shared conversations; legacy UML/image calls retain their limits. */
-    public Result generateConversation(String prompt,Map<String,Object> schema,int maxTokens) throws Exception {
-        return forConversations().generateWithBudget(prompt,schema,null,Math.max(256,Math.min(2048,maxTokens)));
-    }
-
-    /** Dedicated chat credentials and cooldowns; never replace the legacy editor/image pipeline. */
-    public synchronized UmlAiProviderPipeline forConversations() {
-        if(conversationKey.isBlank())return this;
-        if(conversationPipeline==null){
-            var isolated=new UmlAiProviderPipeline(mapper);
-            isolated.groqKey=conversationKey.trim();isolated.groqModel=conversationModel;
-            isolated.groqBaseUrl=groqBaseUrl;isolated.timeoutSeconds=timeoutSeconds;
-            conversationPipeline=isolated;
-        }
-        return conversationPipeline;
-    }
-
-    private Result generateWithBudget(String prompt,Map<String,Object> schema,String imageUrl,int maxTokens) throws Exception {
         List<String> keys=geminiKeys();
         int attempts=0,lastStatus=keys.isEmpty()?503:429;
         for(int i=0;i<keys.size();i++){
             if(System.currentTimeMillis()<geminiKeysUnavailableUntil.getOrDefault(i,0L))continue;
             attempts++;
             try{
-                String json=gemini(prompt,schema,imageUrl,keys.get(i),maxTokens);
+                String json=gemini(prompt,schema,imageUrl,keys.get(i));
                 return new Result(json,"GEMINI",geminiModel,i>0||attempts>1);
             }catch(InterruptedException e){Thread.currentThread().interrupt();throw e;
             }catch(UpstreamFailure e){
@@ -85,7 +61,7 @@ public class UmlAiProviderPipeline {
         if(!groqKey.isBlank()&&System.currentTimeMillis()>=groqUnavailableUntil.get()){
             try{
                 String selectedModel=imageUrl==null?groqModel:groqImageModel;
-                String json=imageUrl==null?groq(prompt,schema,null,selectedModel,maxTokens):groq(prompt,schema,imageUrl,selectedModel);
+                String json=groq(prompt,schema,imageUrl,selectedModel);
                 return new Result(json,"GROQ",selectedModel,!keys.isEmpty());
             }catch(InterruptedException e){Thread.currentThread().interrupt();throw e;
             }catch(UpstreamFailure e){

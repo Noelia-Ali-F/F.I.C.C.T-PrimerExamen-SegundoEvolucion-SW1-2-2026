@@ -255,19 +255,6 @@
   font-weight: 500;
 }
 
-.mobile-download { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--theme-element-border-color); }
-.mobile-download-heading { display: flex; align-items: flex-start; gap: .75rem; }
-.mobile-download-icon { display: grid; place-items: center; flex: 0 0 2.5rem; height: 2.5rem; border-radius: .8rem; background: var(--theme-primary-light-color); color: var(--theme-primary-color); }
-.mobile-download h3 { margin: 0 0 .35rem; font-size: .95rem; font-weight: 800; color: var(--theme-border-text-color); }
-.mobile-download-heading p { margin: 0; font-size: .8rem; line-height: 1.5; color: var(--theme-slate-500); }
-.mobile-download-button { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.9rem; margin-top: 1rem; padding: .6rem .8rem; border: 1px solid var(--theme-primary-color); border-radius: .85rem; color: var(--theme-primary-color); background: white; font-size: .85rem; font-weight: 750; text-align: center; text-decoration: none; }
-.mobile-download-button:hover { background: var(--theme-primary-light-color); }
-.mobile-download-button:focus-visible, .mobile-install-help summary:focus-visible { outline: 3px solid var(--theme-primary-color); outline-offset: 3px; }
-.mobile-download-help { margin: .65rem 0; text-align: center; font-size: .7rem; color: var(--theme-slate-500); }
-.mobile-install-help { font-size: .75rem; line-height: 1.6; color: var(--theme-slate-500); }
-.mobile-install-help summary { width: fit-content; cursor: pointer; color: var(--theme-primary-color); font-weight: 700; }
-.mobile-install-help p { margin: .5rem 0 0; }
-
 .spinner-small {
   width: 1.25rem;
   height: 1.25rem;

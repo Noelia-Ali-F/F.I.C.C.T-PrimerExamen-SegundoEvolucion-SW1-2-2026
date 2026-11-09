@@ -2,19 +2,19 @@
 
 **ArqNova** es una plataforma de modelado UML colaborativo con edición en tiempo real, inteligencia artificial, interoperabilidad con Enterprise Architect y generación de software. Incluye editor web, backend, PostgreSQL y aplicación Android.
 
-El proyecto continúa en el **segundo examen de Software I**. La base del primer examen se conserva y comienza la implementación incremental de los once casos de uso del segundo examen. El estado por caso y la activación pendiente se documentan en [docs/segundo-examen.md](docs/segundo-examen.md).
+El proyecto continúa en el **segundo examen de Software I**. **Todo lo implementado hasta ahora corresponde al primer examen; todavía no hay funcionalidades implementadas del segundo examen.**
 
-## Persistencia NoSQL para el segundo examen
+## Migración de la base de datos a DynamoDB
 
-El CU8 del segundo examen requiere NoSQL para conversaciones y contexto de IA. La ampliación utiliza una tabla DynamoDB independiente y **mantiene PostgreSQL para el sistema existente**. El módulo nuevo está desactivado por defecto; el despliegue AWS del segundo examen lo habilita mediante su override versionado.
+Se incorporó el adaptador NoSQL de **Amazon DynamoDB** conservando la arquitectura hexagonal y las cuatro capas. La activación en AWS requiere crear la tabla, asociar un rol IAM y verificar la copia de los datos. **Actualizar el código no cambia automáticamente la base de producción**, que continúa en PostgreSQL hasta completar ese paso.
 
-La adaptación anterior para migrar toda la base sigue disponible como opción técnica, pero no es necesaria para esta entrega ni está activada. Ver [segundo examen](docs/segundo-examen.md) y [adaptación general anterior](docs/dynamodb.md).
+La configuración, la plantilla de AWS y el procedimiento de migración/reversión están en [docs/dynamodb.md](docs/dynamodb.md). La aplicación web y sus contratos REST/WebSocket se conservan.
 
 ## Contenido
 
 - [Estado de las entregas](#estado-de-las-entregas)
 - [Primer examen: funcionalidades implementadas](#primer-examen-funcionalidades-implementadas)
-- [Segundo examen: implementación incremental](#segundo-examen-implementación-incremental)
+- [Segundo examen: pendiente de implementación](#segundo-examen-pendiente-de-implementación)
 - [Arquitectura general](#arquitectura-general)
 - [Backend en cuatro capas](#backend-en-cuatro-capas)
 - [Stack tecnológico](#stack-tecnológico)
@@ -32,7 +32,7 @@ La adaptación anterior para migrar toda la base sigue disponible como opción t
 | Etapa | Estado | Contenido |
 |---|---|---|
 | Primer examen | Implementado | Funcionalidades existentes, documentación y ajustes del sistema actual |
-| Segundo examen | En implementación | Primera entrega técnica: conversaciones compartidas, contexto reciente, consultas/revisión e historial en NoSQL; ampliaciones UML y móvil pendientes |
+| Segundo examen | Sin funcionalidades implementadas | Espacio reservado para documentar los nuevos requisitos, su implementación y sus pruebas |
 
 ## Primer examen: funcionalidades implementadas
 
@@ -204,11 +204,11 @@ Esta sección reúne el alcance existente del primer examen. Los ajustes de IA, 
 
 </details>
 
-## Segundo examen: implementación incremental
+## Segundo examen: pendiente de implementación
 
-La ampliación del segundo examen incorpora conversaciones compartidas con memoria DynamoDB, consulta/revisión y un modo de modelado aplicado una sola vez desde el servidor. La tabla y el rol de AWS están preparados; la ampliación web/backend está desplegada desde el 2 de noviembre de 2026. El modelado se habilita por separado con `AI_MODELING_ENABLED=true` y requiere la migración V9. El visor móvil de solo lectura y el historial por proyecto están implementados y probados; el APK debug ya se instaló y probó en Android 13 contra AWS. Las notificaciones Firebase están activadas y se verificaron en primer y segundo plano; ver [CU11 push](docs/notificaciones-push-aws.md). Ver [despliegue y comprobaciones AWS](docs/despliegue-segundo-examen-aws.md).
+**Estado actual: todavía no se implementó ninguna funcionalidad del segundo examen.**
 
-El detalle por caso de uso y sus pruebas está en [docs/segundo-examen.md](docs/segundo-examen.md). Para cada nueva funcionalidad se documentan:
+Esta sección se completará a medida que avancemos. Para cada nueva funcionalidad se documentarán:
 
 - El requisito y su objetivo.
 - El estado: pendiente, en desarrollo o implementado.
@@ -457,8 +457,3 @@ Debe publicarse el puerto del frontend en el Security Group. PostgreSQL debe per
 - Frontend: `arqnova-frontend`.
 - Aplicación móvil: `arqnova_mobile`.
 - Package Android: `com.arqnova.mobile`.
-
-La continuación local del segundo examen está documentada en [esta guía](docs/puesta-en-marcha-local-segundo-examen.md).
-
-
-La app Android se puede descargar sin iniciar sesion desde [el login publicado](https://18-116-164-204.sslip.io/login). Ver [publicacion del APK](docs/descarga-apk-login.md).

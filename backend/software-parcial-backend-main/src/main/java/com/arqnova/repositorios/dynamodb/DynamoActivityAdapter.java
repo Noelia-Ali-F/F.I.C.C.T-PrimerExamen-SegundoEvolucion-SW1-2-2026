@@ -15,9 +15,4 @@ public class DynamoActivityAdapter extends DynamoEntityAdapter<UmlCollaborationA
     public List<UmlCollaborationActivityEntity> findTop100BySessionIdOrderByOccurredAtDesc(String id) {
         return findAll().stream().filter(v -> v.getSessionId().equals(id)).sorted(Comparator.comparing(UmlCollaborationActivityEntity::getOccurredAt).reversed()).limit(100).toList();
     }
-    public List<UmlCollaborationActivityEntity> projectHistory(String project,java.time.LocalDateTime before,String beforeId,int limit){
-        return findAll().stream().filter(v->project.equals(v.getProjectId()))
-            .filter(v->before==null||v.getOccurredAt().isBefore(before)||(v.getOccurredAt().equals(before)&&v.getEventId().compareTo(beforeId)<0))
-            .sorted(Comparator.comparing(UmlCollaborationActivityEntity::getOccurredAt).thenComparing(UmlCollaborationActivityEntity::getEventId).reversed()).limit(limit).toList();
-    }
 }

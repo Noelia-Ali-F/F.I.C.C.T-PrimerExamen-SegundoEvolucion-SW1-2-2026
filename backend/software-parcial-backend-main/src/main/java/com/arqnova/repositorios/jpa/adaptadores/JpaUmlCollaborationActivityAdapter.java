@@ -19,10 +19,6 @@ public class JpaUmlCollaborationActivityAdapter implements UmlCollaborationActiv
  public void deleteAll(){repository.deleteAll();}
  public void flush(){repository.flush();}
  public List<UmlCollaborationActivityEntity> findTop100BySessionIdOrderByOccurredAtDesc(String sessionId){return repository.findTop100BySessionIdOrderByOccurredAtDesc(sessionId).stream().map(this::domain).toList();}
- public List<UmlCollaborationActivityEntity> projectHistory(String project,java.time.LocalDateTime before,String beforeId,int limit){
-  var page=org.springframework.data.domain.PageRequest.of(0,limit);
-  return (before==null?repository.findByProjectIdOrderByOccurredAtDescEventIdDesc(project,page):repository.historyBefore(project,before,beforeId,page)).stream().map(this::domain).toList();
- }
  private UmlCollaborationActivityEntity domain(com.arqnova.repositorios.jpa.entidades.UmlCollaborationActivityEntity value){return UmlCollaborationActivityEntity.builder().eventId(value.getEventId()).sessionId(value.getSessionId()).projectId(value.getProjectId()).userId(value.getUserId()).userName(value.getUserName()).eventType(value.getEventType()).elementId(value.getElementId()).elementType(value.getElementType()).operation(value.getOperation()).eventData(value.getEventData()).occurredAt(value.getOccurredAt()).build();}
  private com.arqnova.repositorios.jpa.entidades.UmlCollaborationActivityEntity entity(UmlCollaborationActivityEntity value){return com.arqnova.repositorios.jpa.entidades.UmlCollaborationActivityEntity.builder().eventId(value.getEventId()).sessionId(value.getSessionId()).projectId(value.getProjectId()).userId(value.getUserId()).userName(value.getUserName()).eventType(value.getEventType()).elementId(value.getElementId()).elementType(value.getElementType()).operation(value.getOperation()).eventData(value.getEventData()).occurredAt(value.getOccurredAt()).build();}
 }

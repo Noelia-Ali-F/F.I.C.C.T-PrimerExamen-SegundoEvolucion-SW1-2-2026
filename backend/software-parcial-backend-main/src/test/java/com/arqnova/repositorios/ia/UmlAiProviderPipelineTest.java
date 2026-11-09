@@ -25,7 +25,6 @@ class UmlAiProviderPipelineTest {
     private int quotaKeys;
     private String groqError="unavailable";
     private final List<String> keysSeen=new ArrayList<>();
-    private final List<String> groqKeysSeen=new ArrayList<>();
     private UmlAiProviderPipeline pipeline;
     @BeforeEach void setup() throws Exception {
         server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
@@ -33,7 +32,7 @@ class UmlAiProviderPipelineTest {
             boolean isGemini=exchange.getRequestURI().getPath().contains("generateContent");
             int call=(isGemini?geminiCalls:groqCalls).incrementAndGet();
             var payload=mapper.readValue(exchange.getRequestBody(),Map.class);
-            if(isGemini){geminiPayload=payload;keysSeen.add(exchange.getRequestHeaders().getFirst("x-goog-api-key"));}else {groqPayload=payload;groqKeysSeen.add(exchange.getRequestHeaders().getFirst("Authorization"));}
+            if(isGemini){geminiPayload=payload;keysSeen.add(exchange.getRequestHeaders().getFirst("x-goog-api-key"));}else groqPayload=payload;
             int status=isGemini?(call<=rejectedKeys?401:keysSeen.size()<=quotaKeys?429:geminiStatus):groqStatus;
             if(!isGemini && rejectLargeOutput && ((Number)payload.get("max_completion_tokens")).intValue()>768)status=429;
             if(!isGemini&&call<=reviewQuotaAttempts){status=429;exchange.getResponseHeaders().add("Retry-After",reviewRetryAfter);}
@@ -49,36 +48,6 @@ class UmlAiProviderPipelineTest {
     private void set(String name,Object value){ReflectionTestUtils.setField(pipeline,name,value);}
     @AfterEach void stop(){server.stop(0);}
     private UmlAiProviderPipeline.Result run() throws Exception {return pipeline.generate("Genera UML",Map.of("type","object"),null);}
-    @Test void chatUsaSuClaveSinCambiarElEditorAnterior() throws Exception {
-        set("conversationKey","test-chat-only");
-        assertThat(pipeline.generateConversation("Pregunta",Map.of("type","object"),1024).provider()).isEqualTo("GROQ");
-        assertThat(groqKeysSeen).containsExactly("Bearer test-chat-only");
-        assertThat(geminiCalls.get()).isZero();
-        assertThat(run().provider()).isEqualTo("GEMINI");
-        geminiStatus=429;
-        assertThat(run().provider()).isEqualTo("GROQ");
-        assertThat(groqKeysSeen).containsExactly("Bearer test-chat-only","Bearer test-groq");
-    }
-    @Test void cuotaDelChatNoConsumeClavesAnterioresNiBloqueaSuPipeline() throws Exception {
-        set("conversationKey","test-chat-only");groqStatus=429;
-        assertThatThrownBy(()->pipeline.generateConversation("Pregunta",Map.of("type","object"),1024)).isInstanceOf(OpenAiUmlInterpreter.ProviderException.class);
-        assertThat(geminiCalls.get()).isZero();assertThat(groqKeysSeen).containsExactly("Bearer test-chat-only");
-        groqStatus=200;geminiStatus=429;
-        assertThat(run().provider()).isEqualTo("GROQ");
-        assertThat(groqKeysSeen).containsExactly("Bearer test-chat-only","Bearer test-groq");
-    }
-    @Test void chatSinClaveIndependienteConservaCompatibilidad() throws Exception {
-        assertThat(pipeline.forConversations()).isSameAs(pipeline);
-        assertThat(pipeline.generateConversation("Pregunta",Map.of("type","object"),1024).provider()).isEqualTo("GEMINI");
-    }
-    @Test void modeladoCompartidoTambienUtilizaLaClaveDelChat() throws Exception {
-        set("conversationKey","test-chat-only");
-        groqJson="{\"status\":\"READY\",\"message\":\"ok\",\"operations\":[{\"type\":\"CLASS_CREATE\",\"target\":{\"className\":\"Libro\"},\"parameters\":{\"name\":\"Libro\",\"attributes\":[]}}]}";
-        var legacy=new OpenAiUmlInterpreter(mapper);ReflectionTestUtils.setField(legacy,"providerPipeline",pipeline);
-        var request=new com.arqnova.modelo.dto.request.UmlAiCommandRequest("Crea Libro",Map.of("classes",List.of(),"relations",List.of()));
-        assertThat(legacy.forConversations().interpret(request).getInterpreter()).isEqualTo("GROQ");
-        assertThat(geminiCalls.get()).isZero();assertThat(groqKeysSeen).containsExactly("Bearer test-chat-only");
-    }
     @Test void usaPrimeroGeminiSinConsultarGroq() throws Exception {
         var result=run();assertThat(result.provider()).isEqualTo("GEMINI");assertThat(result.fallbackUsed()).isFalse();assertThat(groqCalls.get()).isZero();
         assertThat(((Map<?,?>)geminiPayload.get("generationConfig")).get("responseJsonSchema")).isNotNull();

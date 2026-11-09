@@ -57,15 +57,6 @@ public class OpenAiUmlInterpreter implements com.arqnova.servicios.puertos.salid
 
     public OpenAiUmlInterpreter(ObjectMapper mapper) { this.mapper = mapper; }
 
-    public OpenAiUmlInterpreter forConversations() {
-        if(providerPipeline==null)return this;
-        var selected=providerPipeline.forConversations();
-        if(selected==providerPipeline)return this;
-        var isolated=new OpenAiUmlInterpreter(mapper);
-        isolated.providerPipeline=selected;
-        return isolated;
-    }
-
     public boolean isConfigured() { return (providerPipeline != null && providerPipeline.isConfigured()) || (apiKey != null && !apiKey.isBlank()); }
 
     private String visionModel() {

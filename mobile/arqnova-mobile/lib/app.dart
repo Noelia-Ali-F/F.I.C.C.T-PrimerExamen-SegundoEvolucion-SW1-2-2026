@@ -2,17 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'pages/home_page.dart';
-import 'core/composition/mobile_dependencies.dart';
 
-Future<void> runArqNovaMobileApp() async {
+void runArqNovaMobileApp() {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await MobileDependencies.initializeProjectNotifications().timeout(
-      const Duration(seconds: 5),
-    );
-  } catch (_) {
-    /* The existing local assistant remains available without Firebase. */
-  }
   runApp(const ArqNovaMobileApp());
 }
 
