@@ -9,6 +9,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { UmlProjectStoreService } from './uml-project-store.service';
 import { UmlAiCommandService } from './uml-ai-command.service';
 import { UmlXmiService } from './uml-xmi.service';
+import { AiConversationService } from './ai-conversation.service';
 import { vi } from 'vitest';
 import { ComponentFixture } from '@angular/core/testing';
 
@@ -128,6 +129,39 @@ describe('UmlClassDiagramComponent', () => {
     expect(component.classes()[1].description).toBe('Edición manual');
     expect((component as any).localModelDirty).toBe(false);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each(['Venta','PedidoUniversitario'])('integra IA en %s tras entrar por invitación y editar localmente', name => {
+    const base = {...DEFAULT_UML_MODEL,classes:DEFAULT_UML_MODEL.classes.slice(0,2).map((node,i)=>({...node,name:i===0?name:'OtraClase'})),relations:[]};
+    (component as any).teamAi={status:()=>of({enabled:true}),watch:()=>new Subject<any>()};
+    (component as any).collaboration={join:()=>of({sessionId:'session-test',projectId:'project-test',projectName:base.title,model:base}),activities:()=>of([]),connect:vi.fn(),disconnect:vi.fn(),publish:vi.fn()};
+    const store = TestBed.inject(UmlProjectStoreService);
+    const attribute = {id:'invitation-ai',name:'Compartido',type:'String',isPrimaryKey:false};
+    const local = {...base,classes:[{...base.classes[0],x:base.classes[0].x+20},base.classes[1]]};
+    const remote = {...base,classes:[base.classes[0],{...base.classes[1],attributes:[...base.classes[1].attributes,attribute]}]};
+    const get = vi.spyOn(store,'get').mockReturnValue(of({id:'project-test',name:base.title,description:'',status:'EN_EDICION',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),model:remote,modelVersion:103}));
+    (component as any).joinByInvitation('INVITE');
+    (component as any).localModelDirty=true;
+    component.model.set(local);
+    component.syncTeamModel(103);
+    expect(get).toHaveBeenCalled();
+    expect(component.classes()[0].x).toBe(local.classes[0].x);
+    expect(component.classes()[1].attributes).toContainEqual(attribute);
+  });
+
+  it('mantiene la recuperación automática si la carga inicial falla y abre la copia local', () => {
+    const store=TestBed.inject(UmlProjectStoreService);
+    const get=vi.spyOn(store,'get').mockReturnValue(throwError(()=>new Error('network')));
+    const ai=TestBed.inject(AiConversationService);
+    vi.spyOn(ai,'status').mockReturnValue(of({enabled:true,modes:['MODEL']}));
+    const watch=vi.spyOn(ai,'watch').mockReturnValue(new Subject<any>());
+    const offlineFixture=TestBed.createComponent(UmlClassDiagramComponent);
+    const offline=offlineFixture.componentInstance;
+    expect(get).toHaveBeenCalled();
+    expect(watch).toHaveBeenCalledWith('project-test');
+    expect((offline as any).canonicalModel).toBeDefined();
+    expect((offline as any).canonicalReconciliationTimer).toBeDefined();
+    offlineFixture.destroy();
   });
 
   it('reintenta la sincronización al terminar un guardado en curso', () => {

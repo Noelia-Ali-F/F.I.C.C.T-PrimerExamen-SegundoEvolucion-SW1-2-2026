@@ -184,7 +184,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
       },
       error: () => {
         const cached=this.projectStore.cached(this.projectId);
-        if(cached){this.model.set(this.normalizeModel(cached.model));this.lastSavedAt.set(new Date(cached.updatedAt));this.status.set('Sin conexión: copia local abierta sin sobrescribir PostgreSQL');return;}
+        if(cached){const model=this.normalizeModel(cached.model);this.model.set(model);this.canonicalModel=model;this.canonicalModelVersion=cached.modelVersion??0;this.lastSavedAt.set(new Date(cached.updatedAt));this.status.set('Sin conexión: copia local abierta sin sobrescribir PostgreSQL');this.watchTeamModeling();return;}
         this.router.navigate(['/proyectos']);
       }
     });
@@ -648,7 +648,18 @@ export class UmlClassDiagramComponent implements OnDestroy {
       }
     });
   }
-  private joinByInvitation(code:string){this.collaboration.join(code).subscribe({next:session=>{const model=this.normalizeModel(session.model);this.model.set(model);this.projectStore.upsertCollaborative(session.projectId,session.projectName,model);this.lastSavedAt.set(new Date(model.updatedAt||Date.now()));this.activateSession(session);},error:()=>{this.showNotice('error','La invitación no existe o ya no está activa.');this.router.navigate(['/proyectos']);}});}
+  private joinByInvitation(code:string){this.collaboration.join(code).subscribe({next:session=>{
+    if(session.projectId!==this.projectId){this.router.navigate(['/diagrama-clases',session.projectId],{queryParams:{invite:code}});return;}
+    const model=this.normalizeModel(session.model);
+    this.model.set(model);
+    // The invitation contains a server snapshot but no version. Keep its merge base
+    // before editing; the canonical GET will supply the version on connection/reconciliation.
+    this.canonicalModel=model;
+    this.canonicalModelVersion=0;
+    this.projectStore.upsertCollaborative(session.projectId,session.projectName,model);
+    this.lastSavedAt.set(new Date(model.updatedAt||Date.now()));
+    this.activateSession(session);
+  },error:()=>{this.showNotice('error','La invitación no existe o ya no está activa.');this.router.navigate(['/proyectos']);}});}
   private activateSession(session:UmlSession){this.watchTeamModeling();this.collaborativeSession.set(session);this.status.set('Sesión colaborativa activa');this.activity.set([]);this.collaboration.activities(session.sessionId).subscribe({next:history=>this.activity.update(live=>{const ids=new Set(live.map(item=>item.eventId));return [...live,...history.filter(item=>!ids.has(item.eventId))].sort((a,b)=>(b.timestamp??0)-(a.timestamp??0)).slice(0,100);}),error:()=>{}});this.collaboration.connect(session,event=>this.handleLiveEvent(event));}
   private broadcast(type:string,elementId:string,element:unknown,operation:string,elementType?:UmlLockElementType){const session=this.collaborativeSession();if(!session)return;this.collaboration.publish({type,projectId:this.projectId,elementId,elementType:elementType??(type.startsWith('relation:')?'relation':'class'),operation,data:{element}});}
   private broadcastAttribute(type:'attribute:create'|'attribute:update'|'attribute:delete',classId:string,attributeId:string,attribute?:UmlAttribute){if(!this.collaborativeSession())return;this.collaboration.publish({type,projectId:this.projectId,elementId:attributeId,elementType:'attribute',operation:type==='attribute:create'?'creó un atributo':type==='attribute:delete'?'eliminó un atributo':'actualizó un atributo',data:{classId,attributeId,...(attribute?{attribute}:{})}});}
