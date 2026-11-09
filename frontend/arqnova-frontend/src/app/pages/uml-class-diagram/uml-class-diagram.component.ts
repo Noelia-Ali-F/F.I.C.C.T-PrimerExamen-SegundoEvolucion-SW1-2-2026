@@ -31,6 +31,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private readonly teamAi = inject(AiConversationService);
   private readonly teamAiSubscriptions = new Subscription();
   private teamAiWatching = false;
+  private canonicalReconciliationTimer?: ReturnType<typeof setInterval>;
   private canonicalRefreshing = false;
   private canonicalModelVersion = 0;
   private canonicalModel?: UmlDiagramModel;
@@ -189,7 +190,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     });
   }
 
-  ngOnDestroy() { this.teamAiSubscriptions.unsubscribe();window.clearInterval(this.lockRenewTimer);if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);this.voiceCaptureActive=false;this.voice.stop(); this.collaboration.disconnect(); this.revokeImagePreview(); }
+  ngOnDestroy() { this.teamAiSubscriptions.unsubscribe();clearInterval(this.canonicalReconciliationTimer);window.clearInterval(this.lockRenewTimer);if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);this.voiceCaptureActive=false;this.voice.stop(); this.collaboration.disconnect(); this.revokeImagePreview(); }
 
   openBackendGenerator() {
     const base=this.safeTitle()||'uml-backend';
@@ -533,14 +534,20 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private finishAi(instruction:string,message:string,kind:'success'|'error'|'clarification'){this.aiResult.set({kind,text:message});this.aiHistory.update(items=>[{instruction,message,kind,at:new Date()},...items].slice(0,12));if(kind==='success')this.showNotice('success',message);}
 
   private watchTeamModeling(){
+    // The canvas must catch up even with the chat closed or a lost STOMP notification.
+    if(!this.canonicalReconciliationTimer)this.canonicalReconciliationTimer=setInterval(()=>{
+      if(!this.teamAiWatching)this.watchTeamModeling();
+      if(!this.canonicalRefreshing&&!this.saveInFlight&&!this.dragging&&!this.dragCandidate)this.refreshCanonicalModel();
+    },15_000);
     if(this.teamAiWatching)return;this.teamAiWatching=true;
     this.teamAiSubscriptions.add(this.teamAi.status(this.projectId).subscribe({next:status=>{
-      if(!status.enabled)return;
+      if(!status.enabled){this.teamAiWatching=false;return;}
       this.teamAiSubscriptions.add(this.teamAi.watch(this.projectId).subscribe(change=>{
+        if(change.projectId!==this.projectId)return;
         if(change.state==='CONNECTED')this.refreshCanonicalModel();
         if(change.mode==='MODEL'&&change.state==='COMPLETED')this.syncTeamModel(change.diagramVersion);
       }));
-    },error:()=>{}}));
+    },error:()=>{this.teamAiWatching=false;}}));
   }
   syncTeamModel(version?: number) {
     if (version === undefined || version > this.canonicalModelVersion) this.refreshCanonicalModel();

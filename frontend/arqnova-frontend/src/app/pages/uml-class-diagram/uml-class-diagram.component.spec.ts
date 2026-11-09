@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { UmlClassDiagramComponent } from './uml-class-diagram.component';
 import { DEFAULT_UML_MODEL } from './uml-class-diagram.models';
 import { BASE_PATH } from '../../api/variables';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { UmlProjectStoreService } from './uml-project-store.service';
 import { UmlAiCommandService } from './uml-ai-command.service';
 import { UmlXmiService } from './uml-xmi.service';
@@ -40,7 +40,7 @@ describe('UmlClassDiagramComponent', () => {
     const remote={...DEFAULT_UML_MODEL,title:'Modelo remoto',classes:[]};
     const get=vi.spyOn(store,'get').mockReturnValue(of({id:'project-test',name:'Modelo remoto',description:'',status:'EN_EDICION',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),model:remote,modelVersion:2}));
     const save=vi.spyOn(store,'saveModel');
-    (component as any).watchTeamModeling();events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
+    (component as any).watchTeamModeling();events.next({projectId:'project-test',state:'COMPLETED',mode:'MODEL',diagramVersion:2});
     expect(get).toHaveBeenCalledTimes(1);expect(component.model().title).toBe('Modelo remoto');expect(save).not.toHaveBeenCalled();
   });
   it('refleja la multiplicidad guardada en el lienzo y omite una confirmación repetida', () => {
@@ -60,6 +60,50 @@ describe('UmlClassDiagramComponent', () => {
     expect(labels.slice(0, 2).map(label => label.textContent)).toEqual(['0..1', '1..*']);
     component.syncTeamModel(85);
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('recupera un cambio perdido sin abrir el chat y detiene el sondeo al salir', () => {
+    vi.useFakeTimers();
+    try {
+      const events = new Subject<any>();
+      (component as any).teamAi = {status:()=>of({enabled:true}),watch:()=>events};
+      const attribute = {id:'remote-attribute',name:'Continuidad',type:'String',isPrimaryKey:false};
+      const remote = {...DEFAULT_UML_MODEL,classes:DEFAULT_UML_MODEL.classes.map((c,i)=>i===0?{...c,attributes:[...c.attributes,attribute]}:c)};
+      const get = vi.spyOn(TestBed.inject(UmlProjectStoreService),'get').mockReturnValue(of({
+        id:'project-test',name:remote.title,description:'',status:'EN_EDICION',createdAt:new Date().toISOString(),
+        updatedAt:new Date().toISOString(),model:remote,modelVersion:3
+      }));
+      const save = vi.spyOn(TestBed.inject(UmlProjectStoreService),'saveModel');
+      (component as any).watchTeamModeling();
+      events.next({projectId:'otro-proyecto',mode:'MODEL',state:'COMPLETED',diagramVersion:9});
+      expect(get).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(15_000);
+      expect(component.classes()[0].attributes).toContainEqual(attribute);
+      expect(save).not.toHaveBeenCalled();
+      component.ngOnDestroy();
+      vi.advanceTimersByTime(30_000);
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {vi.useRealTimers();}
+  });
+
+  it('reintenta una conexión inicial fallida sin acumular sondeos ni consultas simultáneas', () => {
+    vi.useFakeTimers();
+    try {
+      const events = new Subject<any>();
+      const status = vi.fn().mockReturnValueOnce(throwError(()=>new Error('sin conexión'))).mockReturnValue(of({enabled:true}));
+      const watch = vi.fn(()=>events);
+      (component as any).teamAi = {status,watch};
+      const pending = new Subject<any>();
+      const get = vi.spyOn(TestBed.inject(UmlProjectStoreService),'get').mockReturnValue(pending);
+      (component as any).watchTeamModeling();
+      vi.advanceTimersByTime(15_000);
+      expect(status).toHaveBeenCalledTimes(2);
+      expect(watch).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(45_000);
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(status).toHaveBeenCalledTimes(2);
+      component.ngOnDestroy();
+    } finally {vi.useRealTimers();}
   });
 
   it('muestra un atributo de IA aunque una edición manual en otra clase ya haya causado un 409', () => {
@@ -111,7 +155,7 @@ describe('UmlClassDiagramComponent', () => {
     const get=vi.spyOn(TestBed.inject(UmlProjectStoreService),'get');const original=component.model();
     if(state==='pendiente')(component as any).pendingSaveMessage='Edición local';else (component as any).localModelDirty=true;
     (component as any).watchTeamModeling();
-    events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
+    events.next({projectId:'project-test',state:'COMPLETED',mode:'MODEL',diagramVersion:2});
     expect(get).not.toHaveBeenCalled();expect(component.model()).toBe(original);expect(component.status()).toContain('Conserva tu edición local');
   });
   it('CU9 muestra la opción para generar backend Spring Boot y abre su configuración', () => {
