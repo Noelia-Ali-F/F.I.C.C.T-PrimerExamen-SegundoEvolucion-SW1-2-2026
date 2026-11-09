@@ -30,6 +30,22 @@ class PipelineConversationAdapterTest {
         var prompt=org.mockito.ArgumentCaptor.forClass(String.class);verify(pipeline).generateConversation(prompt.capture(),anyMap(),anyInt());
         assertThat(prompt.getValue()).contains("Cliente").doesNotContain("12345","98765");
     }
+    @Test void mediationIdentifiesRequesterAndIncludesPendingProposalWithoutInvokingModeling() throws Exception {
+        var interpreter = mock(com.arqnova.servicios.UmlAiCommandService.class);
+        var original = turn();
+        var request = new Turn("request-mediate", "p", "luis", "Luis", Mode.MEDIATE, "Compara ambas propuestas",
+                State.PENDING, null, null, 3, original.createdAt(), original.updatedAt());
+        var context = new Context("p", "Biblioteca", "luis", Map.of(), 3, List.of(original), List.of());
+        when(pipeline.generateConversation(anyString(), anyMap(), anyInt()))
+                .thenReturn(new UmlAiProviderPipeline.Result("{\"answer\":\"Aclara la segunda propuesta\",\"findings\":[]}", "GROQ", "fake", false));
+        var answer = new PipelineConversationAdapter(pipeline, new ObjectMapper(), interpreter).answer(request, context);
+        assertThat(answer.operations()).isEmpty();
+        var prompt = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(pipeline).generateConversation(prompt.capture(), anyMap(), eq(1024));
+        assertThat(prompt.getValue()).contains("Luis", "Noelia", "PENDING", "ventajas, desventajas", "deja la decisión al equipo");
+        verifyNoInteractions(interpreter);
+    }
+
     @Test void modelingReusesEstablishedInterpreterAndKeepsOperationsForServerValidation()throws Exception{
         var interpreter=mock(com.arqnova.servicios.UmlAiCommandService.class);
         var operation=com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_CREATE").parameters(Map.of("name","Cliente")).build();

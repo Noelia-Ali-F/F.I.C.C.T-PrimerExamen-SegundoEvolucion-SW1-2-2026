@@ -51,6 +51,43 @@ class AiConversationServiceTest {
         var context=capture.getAllValues().get(1);assertThat(context.groupHistory()).hasSize(1);assertThat(context.userHistory()).isEmpty();
         assertThat(context.diagramVersion()).isEqualTo(5);verify(projects,never()).saveDiagram(anyString(),anyString(),anyMap(),any());
     }
+    @Test void simultaneousAdviceAndMediationKeepTheirAuthorsAndExcludeOtherProjects() throws Exception {
+        var mutations = mock(com.arqnova.servicios.puertos.salida.AiModelMutationPort.class);
+        service = new AiConversationService(memory, provider, events::add, queue::add, projects, users, clock, mutations);
+        when(provider.answer(any(), any())).thenAnswer(call -> {
+            Turn turn = call.getArgument(0);
+            return new Answer("Respuesta para " + turn.authorName(), List.of(), "FAKE", "test");
+        });
+        service.send("p", "ana", "request-advice", Mode.ADVISE, "Propongo composición");
+        service.send("p", "luis", "request-mediate", Mode.MEDIATE, "Compara las propuestas");
+        service.send("other", "ana", "request-other", Mode.ASK, "Propuesta de otro proyecto");
+        queue.get(1).run();
+        queue.get(0).run();
+
+        var context = org.mockito.ArgumentCaptor.forClass(Context.class);
+        verify(provider).answer(argThat(turn -> turn.mode() == Mode.MEDIATE), context.capture());
+        assertThat(context.getValue().groupHistory()).extracting(Turn::requestId).containsExactly("request-advice");
+        assertThat(service.get("p", "luis", "request-advice").answer().text()).isEqualTo("Respuesta para ana");
+        assertThat(service.get("p", "ana", "request-mediate").answer().text()).isEqualTo("Respuesta para luis");
+        assertThat(events.stream().filter(event -> event.projectId().equals("p")))
+                .extracting(Change::state).containsExactly(State.PENDING, State.PENDING, State.COMPLETED, State.COMPLETED);
+        verifyNoInteractions(mutations);
+    }
+
+    @Test void discussionModesNeverApplyOperationsReturnedByProvider() throws Exception {
+        var mutations = mock(com.arqnova.servicios.puertos.salida.AiModelMutationPort.class);
+        service = new AiConversationService(memory, provider, events::add, queue::add, projects, users, clock, mutations);
+        var operation = com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder().type("CLASS_DELETE").build();
+        when(provider.answer(any(), any())).thenReturn(new Answer("Borrar", List.of(), "FAKE", "test", List.of(operation)));
+        for (var mode : List.of(Mode.ASK, Mode.ADVISE, Mode.REVIEW, Mode.MEDIATE)) {
+            String id = "request-" + mode.name();
+            service.send("p", "ana", id, mode, "Borra la clase Cliente");
+            queue.remove(0).run();
+            assertThat(service.get("p", "ana", id).state()).isEqualTo(State.FAILED);
+        }
+        verifyNoInteractions(mutations);
+    }
+
     @Test void rejectsAccessBeforeReadingHistory(){
         when(projects.requireAccess(eq("p"),eq("intruder"))).thenThrow(new UnauthorizedActionException("Sin acceso"));
         assertThatThrownBy(()->service.history("p","intruder",null,20)).isInstanceOf(UnauthorizedActionException.class);
@@ -110,11 +147,37 @@ class AiConversationServiceTest {
         assertThatThrownBy(()->service.send("p","a","model-003",Mode.MODEL,"Crea Cliente")).isInstanceOf(IllegalArgumentException.class);
         assertThat(memory.data).isEmpty();assertThat(queue).isEmpty();
     }
-    @Test void clarificationCompletesWithoutWritingDiagram()throws Exception{
-        var mutations=mock(AiModelMutationPort.class);when(mutations.enabled()).thenReturn(true);
-        service=new AiConversationService(memory,provider,events::add,queue::add,projects,users,clock,mutations);
-        service.send("p","a","model-004",Mode.MODEL,"Crea algo");queue.get(0).run();
-        verify(mutations,never()).apply(any(),any(),any());assertThat(service.get("p","a","model-004").state()).isEqualTo(State.COMPLETED);
+    @Test void unclearModelingNeverReachesProviderOrWritesDiagram() throws Exception {
+        var mutations = mock(AiModelMutationPort.class);
+        when(mutations.enabled()).thenReturn(true);
+        service = new AiConversationService(memory, provider, events::add, queue::add, projects, users, clock, mutations);
+        var ambiguous = List.of("¿Crees que conviene eliminar Cliente?", "Yo sugiero crear Cliente",
+                "Crea algo", "Borra Cliente si te parece", "Cliente y Venta", "Crea Cliente. ¿Conviene quitar Venta?");
+        for (int i = 0; i < ambiguous.size(); i++) {
+            var id = "unclear-" + i;
+            service.send("p", "a", id, Mode.MODEL, ambiguous.get(i));
+            queue.remove(0).run();
+            var result = service.get("p", "a", id);
+            assertThat(result.state()).isEqualTo(State.COMPLETED);
+            assertThat(result.answer().text()).contains("Confirma");
+            assertThat(result.answer().operations()).isEmpty();
+            assertThat(result.diagramVersion()).isEqualTo(5);
+        }
+        verifyNoInteractions(provider);
+        verify(mutations, never()).apply(any(), any(), any());
+    }
+
+    @Test void explicitModelingKeepsDirectAndPoliteCommands() throws Exception {
+        var mutations = mock(AiModelMutationPort.class);
+        when(mutations.enabled()).thenReturn(true);
+        service = new AiConversationService(memory, provider, events::add, queue::add, projects, users, clock, mutations);
+        var commands = List.of("Crea Cliente", "¿Puedes crear Cliente?", "Revisa y corrige la multiplicidad de Venta a Producto",
+                "Quiero que coloques una asociación entre Venta y Producto", "Agrega nombre String a Cliente");
+        for (int i = 0; i < commands.size(); i++) {
+            service.send("p", "a", "explicit-" + i, Mode.MODEL, commands.get(i));
+            queue.remove(0).run();
+        }
+        verify(provider, times(commands.size())).answer(any(), any());
     }
     static class Memory implements AiMemoryPort{
         boolean enabled=true;Map<String,Turn> data=new LinkedHashMap<>();

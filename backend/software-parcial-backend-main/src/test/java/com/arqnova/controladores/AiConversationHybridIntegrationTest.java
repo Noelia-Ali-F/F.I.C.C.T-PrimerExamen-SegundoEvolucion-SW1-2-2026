@@ -137,11 +137,21 @@ class AiConversationHybridIntegrationTest {
                 .andExpect(jsonPath("$.datos.state").value("COMPLETED")).andExpect(jsonPath("$.datos.diagramVersion").value(2));
         verifyNoInteractions(provider);
     }
-    @Test void viewerCannotRequestModeling(){
+    @Test void viewerCannotRequestModeling() throws Exception {
         String otherName=tokens.verificar(outsider).username();
         projects.addMember(project,otherName,ProjectMemberRole.VIEWER);
+        mvc.perform(get(path()+"/status").header("Authorization","Bearer "+outsider))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.datos.modes[?(@ == 'MODEL')]").isEmpty());
+        mvc.perform(get(path()+"/status").header("Authorization","Bearer "+token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.datos.modes[?(@ == 'MODEL')]").isNotEmpty());
+        mvc.perform(post(path()+"/messages").header("Authorization","Bearer "+outsider).contentType("application/json")
+                .content("{\"requestId\":\"viewer-model\",\"mode\":\"MODEL\",\"instruction\":\"Crea Cliente\"}"))
+                .andExpect(status().isForbidden());
         assertThatThrownBy(()->mutations.apply(new Turn("model-005",project,otherName,otherName,Mode.MODEL,"Crea Cliente",State.PENDING,null,null,1,Instant.now(),Instant.now()),modelContext(1),createAnswer()))
                 .isInstanceOf(com.arqnova.modelo.excepciones.UnauthorizedActionException.class);
+        projects.addMember(project,otherName,ProjectMemberRole.EDITOR);
+        mvc.perform(get(path()+"/status").header("Authorization","Bearer "+outsider))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.datos.modes[?(@ == 'MODEL')]").isNotEmpty());
         verifyNoInteractions(provider);
     }
     @Test void classMutationRespectsAnExistingAttributeLock(){

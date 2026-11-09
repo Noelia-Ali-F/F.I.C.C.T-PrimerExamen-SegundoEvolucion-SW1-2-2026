@@ -176,12 +176,13 @@ class HttpProjectViewerAdapter implements ProjectViewerPort {
             as Map;
     return ViewerPage(
       (data['turns'] as List).map((v) {
-        final mode =
-            v['mode'] == 'MODEL'
-                ? 'Modelado con IA'
-                : v['mode'] == 'REVIEW'
-                ? 'Revisión con IA'
-                : 'Consulta a IA';
+        final mode = switch (v['mode']) {
+          'MODEL' => 'Modelado con IA',
+          'REVIEW' => 'Revisión con IA',
+          'ADVISE' => 'Asesoramiento con IA',
+          'MEDIATE' => 'Mediación con IA',
+          _ => 'Consulta a IA',
+        };
         final state = v['state'];
         final answer =
             state == 'PENDING'

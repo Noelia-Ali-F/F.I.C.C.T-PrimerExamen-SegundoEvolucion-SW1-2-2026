@@ -59,6 +59,33 @@ http.Response ok(dynamic data) => http.Response(
 );
 
 void main() {
+  test('distingue los cinco modos de IA en el historial', () async {
+    final api = HttpProjectViewerAdapter(
+      client: MockClient((request) async => ok({
+        'turns': [
+          for (final mode in ['ASK', 'ADVISE', 'REVIEW', 'MEDIATE', 'MODEL'])
+            {
+              'requestId': mode,
+              'authorName': 'Noelia',
+              'mode': mode,
+              'state': 'COMPLETED',
+              'instruction': 'Instrucción',
+              'answer': {'text': 'Respuesta'},
+              'updatedAt': '2026-11-09T10:00:00Z',
+            },
+        ],
+      })),
+    );
+    final page = await api.conversations(session, 'p', null);
+    expect(page.items.map((entry) => entry.kind), [
+      'Consulta a IA',
+      'Asesoramiento con IA',
+      'Revisión con IA',
+      'Mediación con IA',
+      'Modelado con IA',
+    ]);
+  });
+
   test(
     'el adaptador autentica y consulta el modelo sin enviar operaciones de edición',
     () async {

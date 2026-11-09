@@ -8,7 +8,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
 
 @Component({selector:'app-project-ai-chat',standalone:true,imports:[CommonModule,FormsModule],
   template:`
-    <div class="chat-info">Conversación compartida del proyecto. Consultar y revisar no modifican el lienzo.</div>
+    <div class="chat-info">Conversación compartida del proyecto. Solo el modo Modificar diagrama puede editar el lienzo.</div>
     @if(error()){<p class="chat-error" role="alert">{{error()}}</p>}
     @if(loading()){<p aria-live="polite">Cargando conversación…</p>}
     @if(enabled()){
@@ -18,7 +18,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
         @for(turn of turns();track turn.requestId){
           <article>
             <header><strong>{{turn.authorName}}</strong><time>{{turn.createdAt|date:'short'}}</time></header>
-            <span class="chat-mode">{{turn.mode==='MODEL'?'Modelado UML':turn.mode==='REVIEW'?'Revisión UML':'Consulta'}}</span>
+            <span class="chat-mode">{{modeLabels[turn.mode]}}</span>
             <p class="question">{{turn.instruction}}</p>
             @if(turn.state==='PENDING'){<p class="pending">La IA está preparando la respuesta…</p>}
             @else if(turn.state==='FAILED'){<p class="chat-error">{{failureText(turn.errorCode)}}</p>}
@@ -32,7 +32,8 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
         }
       </div>
       <form (ngSubmit)="send()">
-        <label>Acción<select [(ngModel)]="mode" name="mode"><option value="ASK">Consultar a la IA</option><option value="REVIEW">Revisar diagrama</option>@if(modelingEnabled()){<option value="MODEL">Modificar diagrama guardado</option>}</select></label>
+        <label>Acción<select [(ngModel)]="mode" name="mode"><option value="ASK">Consultar a la IA</option><option value="REVIEW">Revisar diagrama</option>@if(availableModes().includes('ADVISE')){<option value="ADVISE">Pedir asesoramiento</option>}@if(availableModes().includes('MEDIATE')){<option value="MEDIATE">Mediar entre propuestas</option>}@if(modelingEnabled()){<option value="MODEL">Modificar diagrama guardado</option>}</select></label>
+        @if(mode==='MEDIATE'){<p>Describe las propuestas o indica cuáles debe comparar la IA. El equipo toma la decisión.</p>}
         @if(mode==='MODEL'){<p>La solicitud se aplicará al diagrama guardado para todo el equipo. Guarda y termina las ediciones manuales antes de enviarla.</p>}
         <textarea name="instruction" [(ngModel)]="instruction" maxlength="4000" rows="3" placeholder="Escribe tu consulta para el equipo" aria-label="Mensaje para la conversación compartida"></textarea>
         <button type="submit" [disabled]="sending()||!instruction.trim()">{{sending()?'Registrando…':'Enviar al equipo'}}</button>
@@ -46,16 +47,27 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   readonly modelCompleted = output<number>();
   private readonly service=inject(AiConversationService);
   private subscriptions=new Subscription();private poll?:ReturnType<typeof setInterval>;private refreshing=false;private refreshAgain=false;private historyLoaded=false;
+  private reconciliationTimer?: ReturnType<typeof setInterval>;
+  private historyHead: string | null = null;
+  private catchUp: { head: string | null; cursor: string } | null = null;
   private loadingTurns=new Set<string>();
+  readonly availableModes = signal<AiConversationMode[]>([]);
+  readonly modeLabels: Record<AiConversationMode, string> = {
+    ASK: 'Consulta', REVIEW: 'Revisión UML', ADVISE: 'Asesoramiento', MEDIATE: 'Mediación', MODEL: 'Modelado UML'
+  };
   modelingEnabled=signal(false);enabled=signal(false);loading=signal(true);sending=signal(false);error=signal('');turns=signal<AiTurn[]>([]);cursor=signal<string|null>(null);loadingOlder=signal(false);
   mode:AiConversationMode='ASK';instruction='';private requestId:string|null=null;private requestContent='';
   ngOnInit(){this.subscriptions.add(this.service.status(this.projectId).subscribe({next:status=>{
-    this.modelingEnabled.set(status.modes?.includes('MODEL')===true);this.enabled.set(status.enabled);this.loading.set(false);
+    this.availableModes.set(status.modes ?? []);
+    this.modelingEnabled.set(this.availableModes().includes('MODEL'));this.enabled.set(status.enabled);this.loading.set(false);
     if(!status.enabled){this.error.set('La conversación compartida todavía no está habilitada. Puedes seguir usando Editar diagrama.');return;}
     this.refresh();this.subscriptions.add(this.service.watch(this.projectId).subscribe(change=>change.requestId?this.loadTurn(change.requestId):this.refresh()));
+    this.reconciliationTimer = setInterval(() => {
+      if (!this.refreshing && !this.loadingOlder()) this.refresh();
+    }, 15_000);
     this.poll=setInterval(()=>this.turns().filter(t=>t.state==='PENDING').slice(0,4).forEach(turn=>this.loadTurn(turn.requestId)),4000);
   },error:()=>{this.loading.set(false);this.error.set('No se pudo conectar con la conversación compartida.');}}));}
-  ngOnDestroy(){this.subscriptions.unsubscribe();if(this.poll)clearInterval(this.poll);}
+  ngOnDestroy(){this.subscriptions.unsubscribe();if(this.poll)clearInterval(this.poll);clearInterval(this.reconciliationTimer);}
   private acceptTurns(incoming: AiTurn[]) {
     this.turns.update(turns => mergeAiTurns(turns, incoming));
     const version = incoming.reduce((latest, turn) =>
@@ -65,10 +77,44 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   private loadTurn(id:string){if(this.loadingTurns.has(id))return;this.loadingTurns.add(id);this.subscriptions.add(this.service.get(this.projectId,id).subscribe({next:turn=>{
     this.acceptTurns([turn]);this.loadingTurns.delete(id);
   },error:()=>this.loadingTurns.delete(id)}));}
-  refresh(){if(this.refreshing){this.refreshAgain=true;return;}this.refreshing=true;this.subscriptions.add(this.service.history(this.projectId).subscribe({next:page=>{
-    this.acceptTurns(page.turns);if(!this.historyLoaded){this.cursor.set(page.nextCursor);this.historyLoaded=true;}this.refreshing=false;this.error.set('');
-    if(this.refreshAgain){this.refreshAgain=false;this.refresh();}
-  },error:()=>{this.refreshing=false;this.refreshAgain=false;this.error.set('No se pudo recuperar el historial. Se conservaron los mensajes visibles.');}}));}
+  refresh() {
+    if (this.refreshing) { this.refreshAgain = true; return; }
+    this.refreshing = true;
+    this.reconcilePage(3);
+  }
+  private reconcilePage(remaining: number) {
+    const scan = this.catchUp;
+    this.subscriptions.add(this.service.history(this.projectId, scan?.cursor).subscribe({
+      next: page => {
+        const head = scan ? scan.head : page.turns[0]?.requestId ?? null;
+        const reachedKnownHistory = page.turns.some(turn => turn.requestId === this.historyHead);
+        if (!this.historyLoaded) {
+          this.cursor.set(page.nextCursor);
+          this.historyLoaded = true;
+          this.historyHead = head;
+        } else if (page.nextCursor && !reachedKnownHistory) {
+          // Keep the manual pagination cursor separate; resume this scan on the next tick.
+          this.catchUp = { head, cursor: page.nextCursor };
+        } else {
+          this.historyHead = head;
+          this.catchUp = null;
+        }
+        this.acceptTurns(page.turns);
+        if (this.catchUp && remaining > 1) {
+          this.reconcilePage(remaining - 1);
+          return;
+        }
+        this.refreshing = false;
+        this.error.set('');
+        if (this.refreshAgain) { this.refreshAgain = false; this.refresh(); }
+      },
+      error: () => {
+        this.refreshing = false;
+        this.refreshAgain = false;
+        this.error.set('No se pudo recuperar el historial. Se conservaron los mensajes visibles.');
+      }
+    }));
+  }
   loadOlder(){const cursor=this.cursor();if(!cursor||this.loadingOlder())return;this.loadingOlder.set(true);this.subscriptions.add(this.service.history(this.projectId,cursor).subscribe({next:page=>{
     this.acceptTurns(page.turns);this.cursor.set(page.nextCursor);this.loadingOlder.set(false);
   },error:()=>{this.loadingOlder.set(false);this.error.set('No se pudieron cargar mensajes anteriores.');}}));}

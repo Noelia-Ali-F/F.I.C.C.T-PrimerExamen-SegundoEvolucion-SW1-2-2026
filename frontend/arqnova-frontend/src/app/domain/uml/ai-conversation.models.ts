@@ -1,4 +1,4 @@
-export type AiConversationMode = 'ASK' | 'REVIEW' | 'MODEL';
+export type AiConversationMode = 'ASK' | 'REVIEW' | 'ADVISE' | 'MEDIATE' | 'MODEL';
 export type AiTurnState = 'PENDING' | 'COMPLETED' | 'FAILED';
 export interface AiFinding { severity: 'INFO' | 'WARNING' | 'ERROR'; elementId: string | null; message: string; }
 export interface AiTurn {

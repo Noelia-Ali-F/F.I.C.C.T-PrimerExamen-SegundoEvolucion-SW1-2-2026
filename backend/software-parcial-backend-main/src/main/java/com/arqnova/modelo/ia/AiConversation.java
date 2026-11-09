@@ -8,7 +8,7 @@ import com.arqnova.modelo.dto.response.UmlAiOperationResponse;
 /** Application-owned conversation memory; independent of provider sessions and persistence. */
 public final class AiConversation {
     private AiConversation() {}
-    public enum Mode { ASK, REVIEW, MODEL }
+    public enum Mode { ASK, REVIEW, MODEL, ADVISE, MEDIATE }
     public enum State { PENDING, COMPLETED, FAILED }
     public record Finding(String severity, String elementId, String message) {}
     public record Answer(String text, List<Finding> findings, String provider, String model, List<UmlAiOperationResponse> operations) {
