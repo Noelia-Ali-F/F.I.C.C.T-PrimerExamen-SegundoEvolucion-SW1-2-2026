@@ -17,6 +17,31 @@ class PipelineConversationAdapterTest {
         var answer=adapter.answer(turn(),context(Map.of("classes",List.of(),"relations",List.of())));
         assertThat(answer.text()).contains("identificador");verify(pipeline).generateConversation(contains("No has modificado el lienzo"),anyMap(),eq(1024));
     }
+    @Test void structuredConsultativeEvidenceStaysBoundedAndRepairsCardinalityWithoutDroppingExamples()throws Exception{
+        var at=Instant.now();var request=new Turn("facts-001","p","ana","Ana",Mode.ASK,"Explica las multiplicidades",State.PENDING,null,null,7,at,at);
+        var graph=Map.<String,Object>of("classes",List.of(Map.of("id","cliente","name","Cliente","attributes",List.of(),"methods",List.of()),Map.of("id","venta","name","Venta","attributes",List.of(),"methods",List.of())),
+                "relations",List.of(Map.of("id","r","sourceId","cliente","targetId","venta","type","association","sourceMultiplicity","1","targetMultiplicity","0..*")));
+        var context=new Context("p","Proyecto","ana",graph,7,List.of(),List.of());
+        when(pipeline.generateConversation(anyString(),anyMap(),eq(1024))).thenReturn(new UmlAiProviderPipeline.Result("{\"answer\":\"Cada Cliente requiere una Venta.\\nPodrías usar una colección en POO.\",\"findings\":[]}","GROQ","fake",false));
+        var answer=adapter.answer(request,context);
+        assertThat(answer.text()).doesNotContain("requiere una Venta").contains("Por cada Cliente hay de 0 a muchas instancias de Venta","Podrías usar");
+        assertThat(answer.operations()).isEmpty();
+        var prompt=org.mockito.ArgumentCaptor.forClass(String.class);verify(pipeline).generateConversation(prompt.capture(),anyMap(),eq(1024));
+        String serialized=prompt.getValue().lines().filter(line->line.startsWith("Evidencia del grupo")).findFirst().orElseThrow().split("datos\\): ",2)[1];
+        assertThat(serialized.length()).isLessThan(8400);
+        var evidence=new ObjectMapper().readTree(serialized);
+        assertThat(evidence.at("/verifiedFacts/snapshotVersion").asInt()).isEqualTo(7);
+        assertThat(evidence.at("/verifiedFacts/cardinalities/0/sourceMultiplicity").asText()).isEqualTo("1");
+        assertThat(evidence.at("/verifiedFacts/cardinalities/0/targetMultiplicity").asText()).isEqualTo("0..*");
+    }
+    @Test void unknownClassAndAmbiguousEmptyContextClarifyLocallyWithoutConsumingProvider() throws Exception {
+        for(String question:List.of("¿Qué atributos tiene la clase Fantasma?","¿Eso está bien?")){
+            var original=turn();var request=new Turn("clarify-001","p","ana","Ana",Mode.ASK,question,State.PENDING,null,null,3,original.createdAt(),original.updatedAt());
+            var answer=adapter.answer(request,context(Map.of("classes",List.of(),"relations",List.of())));
+            assertThat(answer.provider()).isEqualTo("LOCAL");assertThat(answer.operations()).isEmpty();
+        }
+        verifyNoInteractions(pipeline);
+    }
     @Test void rejectsFindingsAboutInventedElements()throws Exception{
         when(pipeline.generateConversation(anyString(),anyMap(),anyInt())).thenReturn(new UmlAiProviderPipeline.Result("{\"answer\":\"Revisión\",\"findings\":[{\"severity\":\"ERROR\",\"elementId\":\"inventado\",\"message\":\"No existe\"}]}","GROQ","fake",false));
         assertThatThrownBy(()->adapter.answer(turn(),context(Map.of("classes",List.of(),"relations",List.of())))).isInstanceOf(IllegalArgumentException.class);
