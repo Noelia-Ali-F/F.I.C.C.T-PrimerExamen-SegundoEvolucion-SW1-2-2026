@@ -25,7 +25,11 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
             @else if(turn.answer;as answer){
               <div class="answer"><strong>Asistente IA</strong><p>{{answer.text}}</p>
                 @for(finding of answer.findings;track $index){<div class="finding" [class.warning]="finding.severity!=='INFO'"><strong>{{finding.severity==='ERROR'?'Error':finding.severity==='WARNING'?'Observación':'Información'}}</strong><p>{{finding.message}}</p></div>}
-                <small>Diagrama guardado · versión {{turn.diagramVersion}}</small>
+                @if(turn.mode!=='MODEL'){<small>Sin cambios en el lienzo · versión {{turn.diagramVersion}}</small>}
+                @else{<small>Diagrama guardado · versión {{turn.diagramVersion}}</small>}
+                @if(answer.model==='modeling-mode-required' && modelingEnabled()){
+                  <button type="button" [disabled]="sending() || !!instruction.trim()" (click)="prepareModeling(turn.instruction)">Preparar cambio UML</button>
+                }
               </div>
             }
           </article>
@@ -33,6 +37,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
       </div>
       <form (ngSubmit)="send()">
         <label>Acción<select [(ngModel)]="mode" name="mode"><option value="ASK">Consultar a la IA</option><option value="REVIEW">Revisar diagrama</option>@if(availableModes().includes('ADVISE')){<option value="ADVISE">Pedir asesoramiento</option>}@if(availableModes().includes('MEDIATE')){<option value="MEDIATE">Mediar entre propuestas</option>}@if(modelingEnabled()){<option value="MODEL">Modificar diagrama guardado</option>}</select></label>
+        @if(mode==='ASK'){<p>Las consultas no editan el lienzo. @if(modelingEnabled()){Para aplicar una orden, elige Modificar diagrama guardado.}</p>}
         @if(mode==='MEDIATE'){<p>Describe las propuestas o indica cuáles debe comparar la IA. El equipo toma la decisión.</p>}
         @if(mode==='MODEL'){<p>La solicitud se aplicará al diagrama guardado para todo el equipo. Guarda y termina las ediciones manuales antes de enviarla.</p>}
         <textarea name="instruction" [(ngModel)]="instruction" maxlength="4000" rows="3" placeholder="Escribe tu consulta para el equipo" aria-label="Mensaje para la conversación compartida"></textarea>
@@ -118,6 +123,11 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   loadOlder(){const cursor=this.cursor();if(!cursor||this.loadingOlder())return;this.loadingOlder.set(true);this.subscriptions.add(this.service.history(this.projectId,cursor).subscribe({next:page=>{
     this.acceptTurns(page.turns);this.cursor.set(page.nextCursor);this.loadingOlder.set(false);
   },error:()=>{this.loadingOlder.set(false);this.error.set('No se pudieron cargar mensajes anteriores.');}}));}
+  prepareModeling(instruction: string) {
+    if (!this.modelingEnabled() || this.sending() || this.instruction.trim()) return;
+    this.mode = 'MODEL';
+    this.instruction = instruction;
+  }
   send(){if(this.sending()||!this.instruction.trim())return;this.sending.set(true);this.error.set('');
     const content=JSON.stringify([this.mode,this.instruction.trim()]);
     if(!this.requestId||this.requestContent!==content){this.requestId=crypto.randomUUID();this.requestContent=content;}const id=this.requestId;

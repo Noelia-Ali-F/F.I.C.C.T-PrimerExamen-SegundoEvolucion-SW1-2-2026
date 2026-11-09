@@ -111,6 +111,15 @@ describe('panel de conversación del proyecto',()=>{
   expect(service.send).toHaveBeenNthCalledWith(1,'p',expect.any(String),'ADVISE','Evalúa esta opción');
   expect(service.send).toHaveBeenNthCalledWith(2,'p',expect.any(String),'MEDIATE','Compara ambas propuestas');
  });
+ it('prepara una orden para Modelado y espera el envío explícito',()=>{
+  const {component,service}=setup(true,['ASK','MODEL']);
+  component.prepareModeling('Agrega NotaVenta a Venta');
+  expect(component.mode).toBe('MODEL');
+  expect(component.instruction).toBe('Agrega NotaVenta a Venta');
+  expect(service.send).not.toHaveBeenCalled();
+  component.prepareModeling('Otra instrucción');
+  expect(component.instruction).toBe('Agrega NotaVenta a Venta');
+ });
  it('muestra un conflicto sin afirmar que el diagrama fue modificado',()=>{
   const {component}=setup();expect(component.failureText('AI_MODEL_CONFLICT')).toContain('El diagrama cambió');
  });

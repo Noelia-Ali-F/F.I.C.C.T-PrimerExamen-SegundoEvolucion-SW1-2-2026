@@ -81,11 +81,27 @@ class AiConversationServiceTest {
         when(provider.answer(any(), any())).thenReturn(new Answer("Borrar", List.of(), "FAKE", "test", List.of(operation)));
         for (var mode : List.of(Mode.ASK, Mode.ADVISE, Mode.REVIEW, Mode.MEDIATE)) {
             String id = "request-" + mode.name();
-            service.send("p", "ana", id, mode, "Borra la clase Cliente");
+            service.send("p", "ana", id, mode, "¿Qué pasaría si borramos Cliente?");
             queue.remove(0).run();
             assertThat(service.get("p", "ana", id).state()).isEqualTo(State.FAILED);
         }
         verifyNoInteractions(mutations);
+    }
+
+    @Test void directEditInConsultationGivesRoleSpecificGuidanceWithoutCallingProvider() throws Exception {
+        var mutations = mock(AiModelMutationPort.class);
+        when(mutations.enabled()).thenReturn(true);
+        when(projects.requireAccess("p", "diego")).thenReturn(com.arqnova.modelo.entidades.ProjectMemberRole.EDITOR);
+        when(projects.requireAccess("p", "lector")).thenReturn(com.arqnova.modelo.entidades.ProjectMemberRole.VIEWER);
+        service = new AiConversationService(memory, provider, events::add, queue::add, projects, users, clock, mutations);
+        String command = "Agrega el atributo NotaVenta de tipo String a la clase Venta";
+        service.send("p", "diego", "edit-guidance", Mode.ASK, command);
+        service.send("p", "lector", "viewer-guidance", Mode.ASK, command);
+        queue.forEach(Runnable::run);
+        assertThat(service.get("p", "diego", "edit-guidance").answer().model()).isEqualTo("modeling-mode-required");
+        assertThat(service.get("p", "lector", "viewer-guidance").answer().model()).isEqualTo("modeling-permission-required");
+        verifyNoInteractions(provider);
+        verify(mutations, never()).apply(any(), any(), any());
     }
 
     @Test void rejectsAccessBeforeReadingHistory(){

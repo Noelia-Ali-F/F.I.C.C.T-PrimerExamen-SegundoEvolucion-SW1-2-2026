@@ -1,7 +1,7 @@
 # Public Android releases are stored outside Git and survive frontend replacement.
 services:
   frontend:
-    image: arqnova-frontend:${MOBILE_DOWNLOAD_WEB_RELEASE:-live-sync-20261109}
+    image: arqnova-frontend:${MOBILE_DOWNLOAD_WEB_RELEASE:-chat-edit-guidance-20261109}
     volumes:
       - type: bind
         source: /home/ubuntu/arqnova-downloads

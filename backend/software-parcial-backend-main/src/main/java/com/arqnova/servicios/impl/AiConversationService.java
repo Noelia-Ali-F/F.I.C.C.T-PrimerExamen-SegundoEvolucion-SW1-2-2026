@@ -104,6 +104,15 @@ public final class AiConversationService implements AiConversationUseCase {
                         List.of(), "LOCAL", "modeling-clarification"), clock.instant()));
                 return;
             }
+            if (turn.mode() != Mode.MODEL && explicitModeling(turn.instruction())) {
+                boolean allowed = canModel(turn.projectId(), turn.authorId());
+                String message = allowed
+                        ? "Esta orden no cambió el lienzo. Usa Modificar diagrama guardado para aplicar la instrucción."
+                        : "Esta orden no cambió el lienzo. Solo el propietario o un editor puede aplicarla.";
+                finish(turn.finish(new Answer(message, List.of(), "LOCAL",
+                        allowed ? "modeling-mode-required" : "modeling-permission-required"), clock.instant()));
+                return;
+            }
             var project=projects.findProjectById(turn.projectId()).orElseThrow();
             var diagram=projects.findDiagramByProjectId(turn.projectId());
             var context = contextHistory.context(turn, project.getName(),
