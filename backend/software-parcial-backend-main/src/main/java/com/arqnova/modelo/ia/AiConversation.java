@@ -28,8 +28,16 @@ public final class AiConversation {
     public record Page(List<Turn> turns, String nextCursor) {
         public Page { turns = List.copyOf(turns); }
     }
+    public record Activity(String authorId, String authorName, Instant at, String elementId,
+                           String elementName, String elementType, String action, String description) {}
     public record Context(String projectId, String projectName, String authorId, Map<String,Object> diagram,
-                          int diagramVersion, List<Turn> groupHistory, List<Turn> userHistory) {}
+                          int diagramVersion, List<Turn> groupHistory, List<Turn> userHistory,
+                          List<Turn> relevantHistory, List<Activity> activities) {
+        public Context(String projectId, String projectName, String authorId, Map<String,Object> diagram,
+                       int diagramVersion, List<Turn> groupHistory, List<Turn> userHistory) {
+            this(projectId, projectName, authorId, diagram, diagramVersion, groupHistory, userHistory, List.of(), List.of());
+        }
+    }
     public record Submission(Turn turn, boolean created) {}
     public record Change(String projectId, String requestId, State state,Mode mode,int diagramVersion) {
         public Change(String projectId,String requestId,State state){this(projectId,requestId,state,null,0);}

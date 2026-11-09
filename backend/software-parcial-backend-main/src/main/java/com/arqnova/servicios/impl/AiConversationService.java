@@ -34,6 +34,7 @@ public final class AiConversationService implements AiConversationUseCase {
     private final UserQueryUseCase users;
     private final Clock clock;
     private final AiModelMutationPort mutations;
+    private final AiContextHistory contextHistory;
     private final Object[] mutationGuards=java.util.stream.IntStream.range(0,64).mapToObj(i->new Object()).toArray();
     public AiConversationService(AiMemoryPort memory, AiConversationProviderPort provider, AiConversationEventsPort events,
             AiTaskPort tasks, ProjectUseCase projects, UserQueryUseCase users, Clock clock) {
@@ -41,6 +42,12 @@ public final class AiConversationService implements AiConversationUseCase {
     }
     public AiConversationService(AiMemoryPort memory,AiConversationProviderPort provider,AiConversationEventsPort events,AiTaskPort tasks,
             ProjectUseCase projects,UserQueryUseCase users,Clock clock,AiModelMutationPort mutations){
+        this(memory, provider, events, tasks, projects, users, clock, mutations, null);
+    }
+    public AiConversationService(AiMemoryPort memory, AiConversationProviderPort provider, AiConversationEventsPort events,
+            AiTaskPort tasks, ProjectUseCase projects, UserQueryUseCase users, Clock clock, AiModelMutationPort mutations,
+            UmlCollaborationActivityDataPort activities) {
+        this.contextHistory = new AiContextHistory(memory, activities);
         this.memory=memory;this.provider=provider;this.events=events;this.tasks=tasks;this.projects=projects;this.users=users;this.clock=clock;this.mutations=mutations;
     }
     public boolean enabled() { return memory.enabled(); }
@@ -99,13 +106,9 @@ public final class AiConversationService implements AiConversationUseCase {
             }
             var project=projects.findProjectById(turn.projectId()).orElseThrow();
             var diagram=projects.findDiagramByProjectId(turn.projectId());
-            var recent = memory.history(turn.projectId(), null, 30).turns();
-            var groupHistory = turn.mode() == Mode.MEDIATE
-                    ? recent.stream().filter(other -> !other.requestId().equals(turn.requestId())).limit(12).toList()
-                    : completed(recent, 12);
-            var context=new Context(turn.projectId(),project.getName(),turn.authorId(),diagram.map(v->v.getModel()).orElse(Map.of("classes",List.of(),"relations",List.of())),
-                    diagram.map(v->v.getModelVersion()).orElse(0),groupHistory,
-                    completed(memory.recentByUser(turn.projectId(),turn.authorId(),20),8));
+            var context = contextHistory.context(turn, project.getName(),
+                    diagram.map(v -> v.getModel()).orElse(Map.of("classes", List.of(), "relations", List.of())),
+                    diagram.map(v -> v.getModelVersion()).orElse(0));
             Answer answer=provider.answer(turn,context);
             if(answer==null||answer.text()==null||answer.text().isBlank()||answer.text().length()>12000||answer.findings().size()>30)
                 throw new IllegalArgumentException("Respuesta IA inválida");
@@ -137,7 +140,6 @@ public final class AiConversationService implements AiConversationUseCase {
                     || (instruction.indexOf('?') < 0 && instruction.indexOf('¿') < 0
                         && DIRECT_MODELING.matcher(instruction).find()));
     }
-    private List<Turn> completed(List<Turn> turns,int limit) { return turns.stream().filter(v->v.state()==State.COMPLETED).limit(limit).toList(); }
     private Turn expire(Turn turn) {
         synchronized(guard(turn)){return expireLocked(turn);}
     }

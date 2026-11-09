@@ -17,4 +17,11 @@ public class UmlAiCommandRequest {
 
     @NotNull(message = "El modelo UML actual es obligatorio")
     private Map<String, Object> model;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String projectEvidence;
+
+    public UmlAiCommandRequest(String instruction, Map<String, Object> model) {
+        this(instruction, model, null);
+    }
 }
