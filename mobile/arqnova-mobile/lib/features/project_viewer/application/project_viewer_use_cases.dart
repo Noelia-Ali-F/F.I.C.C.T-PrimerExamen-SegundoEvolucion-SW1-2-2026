@@ -70,7 +70,7 @@ class ProjectViewerUseCases {
   }
 
   void _checkAccess(ViewerException error) {
-    if (error.status == 401 || error.status == 403) throw error;
+    if (const {401, 403, 404}.contains(error.status)) throw error;
   }
 
   void dispose() {

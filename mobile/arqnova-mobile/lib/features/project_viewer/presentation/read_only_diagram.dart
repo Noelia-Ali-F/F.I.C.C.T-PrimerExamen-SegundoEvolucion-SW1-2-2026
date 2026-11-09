@@ -69,9 +69,18 @@ class UmlViewerPainter extends CustomPainter {
       final attributes = c['attributes'] as List? ?? [];
       final methods = c['methods'] as List? ?? [];
       final height =
-          66 +
-          math.max(1, attributes.length) * 18 +
-          math.max(1, methods.length) * 18;
+          headerHeight(c) +
+          10 +
+          (attributes.isEmpty
+              ? 18
+              : attributes
+                  .map((a) => rowHeight(attributeText(a)))
+                  .reduce((a, b) => a + b)) +
+          (methods.isEmpty
+              ? 18
+              : methods
+                  .map((m) => rowHeight(methodText(m)))
+                  .reduce((a, b) => a + b));
       boxes[id] = Rect.fromLTWH(
         number(c['x'], 30),
         number(c['y'], 30),
@@ -85,10 +94,10 @@ class UmlViewerPainter extends CustomPainter {
   final boxes = <String, Rect>{};
   static double number(dynamic value, double fallback) =>
       value is num && value.toDouble().isFinite
-          ? value.toDouble().clamp(0, 20000)
+          ? math.max(0.0, value.toDouble())
           : fallback;
   Size get canvasSize => Size(
-    boxes.values.fold<double>(350, (v, r) => math.max(v, r.right + 40)),
+    boxes.values.fold<double>(350, (v, r) => math.max(v, r.right + 140)),
     boxes.values.fold<double>(300, (v, r) => math.max(v, r.bottom + 40)),
   );
   final ink =
@@ -104,29 +113,54 @@ class UmlViewerPainter extends CustomPainter {
       if (raw is! Map) continue;
       final from = boxes[raw['sourceId']], to = boxes[raw['targetId']];
       if (from == null || to == null) continue;
-      final start = anchor(from, to.center), end = anchor(to, from.center);
+      final reflexive = raw['sourceId'] == raw['targetId'];
+      final start =
+          reflexive
+              ? Offset(from.right, from.top + 31)
+              : anchor(from, to.center);
+      final end =
+          reflexive ? Offset(to.right, to.top + 65) : anchor(to, from.center);
       final direction = end - start;
       if (direction.distance < 1) continue;
       final unit = direction / direction.distance;
+      final startUnit = reflexive ? const Offset(1, 0) : unit;
+      final endUnit = reflexive ? const Offset(-1, 0) : unit;
       final kind = raw['type'];
-      if (kind == 'dependency') {
+      final middle =
+          reflexive
+              ? Offset(from.right + 63, (start.dy + end.dy) / 2)
+              : (start + end) / 2;
+      if (reflexive) {
+        final loop = reflexivePath(from);
+        if (kind == 'dependency') {
+          final metric = loop.computeMetrics().single;
+          for (var length = 0.0; length < metric.length; length += 12) {
+            canvas.drawPath(
+              metric.extractPath(length, math.min(length + 6, metric.length)),
+              ink,
+            );
+          }
+        } else {
+          canvas.drawPath(loop, ink);
+        }
+      } else if (kind == 'dependency') {
         dashed(canvas, start, end);
       } else {
         canvas.drawLine(start, end, ink);
       }
       if (kind == 'composition' || kind == 'aggregation') {
-        final normal = Offset(-unit.dy, unit.dx);
+        final normal = Offset(-startUnit.dy, startUnit.dx);
         final path =
             Path()
               ..moveTo(start.dx, start.dy)
               ..lineTo(
-                (start + unit * 9 + normal * 5).dx,
-                (start + unit * 9 + normal * 5).dy,
+                (start + startUnit * 9 + normal * 5).dx,
+                (start + startUnit * 9 + normal * 5).dy,
               )
-              ..lineTo((start + unit * 18).dx, (start + unit * 18).dy)
+              ..lineTo((start + startUnit * 18).dx, (start + startUnit * 18).dy)
               ..lineTo(
-                (start + unit * 9 - normal * 5).dx,
-                (start + unit * 9 - normal * 5).dy,
+                (start + startUnit * 9 - normal * 5).dx,
+                (start + startUnit * 9 - normal * 5).dy,
               )
               ..close();
         canvas.drawPath(
@@ -138,7 +172,8 @@ class UmlViewerPainter extends CustomPainter {
         canvas.drawPath(path, ink);
       }
       if (kind == 'inheritance' || kind == 'dependency') {
-        final normal = Offset(-unit.dy, unit.dx), tail = end - unit * 15;
+        final normal = Offset(-endUnit.dy, endUnit.dx),
+            tail = end - endUnit * 15;
         final path =
             Path()
               ..moveTo((tail + normal * 7).dx, (tail + normal * 7).dy)
@@ -153,14 +188,13 @@ class UmlViewerPainter extends CustomPainter {
       label(
         canvas,
         raw['sourceMultiplicity']?.toString() ?? '',
-        start + unit * 24 + const Offset(0, -17),
+        start + startUnit * 24 + const Offset(0, -17),
       );
       label(
         canvas,
         raw['targetMultiplicity']?.toString() ?? '',
-        end - unit * 36 + const Offset(0, -17),
+        end - endUnit * 24 + Offset(0, reflexive ? 4 : -17),
       );
-      final middle = (start + end) / 2;
       label(
         canvas,
         raw['label']?.toString() ?? '',
@@ -184,7 +218,7 @@ class UmlViewerPainter extends CustomPainter {
                 0x2563eb),
       );
       canvas.drawRect(
-        Rect.fromLTWH(rect.left, rect.top, rect.width, 50),
+        Rect.fromLTWH(rect.left, rect.top, rect.width, headerHeight(c)),
         Paint()..color = color.withValues(alpha: .12),
       );
       canvas.drawRRect(outline, ink);
@@ -209,7 +243,7 @@ class UmlViewerPainter extends CustomPainter {
         254,
         bold: true,
       );
-      var y = rect.top + 50;
+      var y = rect.top + headerHeight(c);
       canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), ink);
       final attrs = c['attributes'] as List? ?? [];
       if (attrs.isEmpty) {
@@ -230,7 +264,7 @@ class UmlViewerPainter extends CustomPainter {
           254,
           size: 11,
         );
-        y += 18;
+        y += rowHeight(attributeText(attr));
       }
       y += 5;
       canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), ink);
@@ -252,7 +286,7 @@ class UmlViewerPainter extends CustomPainter {
           254,
           size: 11,
         );
-        y += 18;
+        y += rowHeight(methodText(method));
       }
     }
   }
@@ -265,6 +299,21 @@ class UmlViewerPainter extends CustomPainter {
       value is Map
           ? '${value['name'] ?? ''}(${value['parameters'] ?? ''}): ${value['returnType'] ?? ''}'
           : value.toString();
+  static Path reflexivePath(Rect box) {
+    final start = Offset(box.right, box.top + 31);
+    final end = Offset(box.right, box.top + 65);
+    return Path()
+      ..moveTo(start.dx, start.dy)
+      ..cubicTo(
+        start.dx + 84,
+        start.dy - 18,
+        end.dx + 84,
+        end.dy + 18,
+        end.dx,
+        end.dy,
+      );
+  }
+
   Offset anchor(Rect box, Offset toward) {
     final delta = toward - box.center;
     if (delta.distance < .1) return box.centerRight;
@@ -288,6 +337,33 @@ class UmlViewerPainter extends CustomPainter {
     }
   }
 
+  double headerHeight(Map<String, dynamic> item) {
+    final name = _layout(item['name']?.toString() ?? '', 254, 12, true);
+    final height = math.max(50.0, 30 + name.height);
+    name.dispose();
+    return height;
+  }
+
+  double rowHeight(String value) {
+    final row = _layout(value, 254, 11, false);
+    final height = math.max(18.0, row.height + 5);
+    row.dispose();
+    return height;
+  }
+
+  TextPainter _layout(String value, double width, double size, bool bold) =>
+      TextPainter(
+        text: TextSpan(
+          text: value,
+          style: TextStyle(
+            color: const Color(0xff172554),
+            fontSize: size,
+            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: width);
+
   void text(
     Canvas canvas,
     String value,
@@ -296,20 +372,9 @@ class UmlViewerPainter extends CustomPainter {
     double size = 12,
     bool bold = false,
   }) {
-    final p = TextPainter(
-      text: TextSpan(
-        text: value,
-        style: TextStyle(
-          color: const Color(0xff172554),
-          fontSize: size,
-          fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: width);
-    p.paint(canvas, at);
+    final painter = _layout(value, width, size, bold);
+    painter.paint(canvas, at);
+    painter.dispose();
   }
 
   void label(Canvas canvas, String value, Offset at) {
@@ -323,6 +388,7 @@ class UmlViewerPainter extends CustomPainter {
     )..layout(maxWidth: 180);
     canvas.drawRect(at & p.size, Paint()..color = Colors.white);
     p.paint(canvas, at);
+    p.dispose();
   }
 
   @override

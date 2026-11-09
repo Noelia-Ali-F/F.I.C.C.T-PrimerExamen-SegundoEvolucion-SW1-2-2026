@@ -21,6 +21,8 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
   bool notificationsEnabled = false, notificationsBusy = false;
   final notificationSubscriptions = <StreamSubscription>[];
   ProjectNotification? pendingNotification;
+  MaterialPageRoute<void>? activeDetail;
+  Future<void>? stoppingNotifications;
   @override
   void initState() {
     super.initState();
@@ -58,16 +60,7 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
       if (!mounted || session != actor) return;
       for (final project in values) {
         if (project.id == message.projectId) {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder:
-                  (_) => ProjectDetailPage(
-                    useCases: widget.useCases,
-                    session: actor,
-                    project: project,
-                  ),
-            ),
-          );
+          await openProject(actor, project);
           return;
         }
       }
@@ -76,8 +69,12 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
           content: Text('Este proyecto ya no está disponible para tu cuenta.'),
         ),
       );
-    } catch (_) {
-      if (mounted) {
+    } catch (failure) {
+      if (failure is ViewerException && failure.status == 401) {
+        endSession(actor, expired: true);
+        return;
+      }
+      if (mounted && session == actor) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No se pudo abrir el proyecto de la notificación.'),
@@ -90,6 +87,8 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
   Future<void> bindNotifications(ViewerSession actor) async {
     final notifications = widget.useCases.notifications;
     if (notifications == null) return;
+    await stoppingNotifications;
+    if (!mounted || session != actor) return;
     try {
       final enabled = await notifications.bind(actor.token);
       if (mounted && session == actor) {
@@ -98,6 +97,7 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
     } catch (_) {
       /* Reading projects remains available when push is not configured. */
     }
+    if (!mounted || session != actor) return;
     final pending = pendingNotification ?? notifications.takePending();
     pendingNotification = null;
     if (mounted && session == actor && pending != null) {
@@ -106,18 +106,21 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
   }
 
   Future<void> toggleNotifications() async {
-    if (notificationsBusy || session == null) return;
+    final actor = session;
+    if (notificationsBusy || actor == null) return;
     final notifications = widget.useCases.notifications!;
     setState(() => notificationsBusy = true);
     try {
       if (notificationsEnabled) {
         await notifications.disable();
       } else {
-        await notifications.enable(session!.token);
+        await notifications.enable(actor.token);
       }
-      if (mounted) setState(() => notificationsEnabled = notifications.enabled);
+      if (mounted && session == actor) {
+        setState(() => notificationsEnabled = notifications.enabled);
+      }
     } catch (e) {
-      if (mounted) {
+      if (mounted && session == actor) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -129,22 +132,75 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => notificationsBusy = false);
+      if (mounted && session == actor) {
+        setState(() => notificationsBusy = false);
+      }
     }
   }
 
-  Future<void> logout() async {
+  Future<void> openProject(ViewerSession actor, ViewerProject project) async {
+    if (!mounted || session != actor) return;
+    final navigator = Navigator.of(context);
+    final previous = activeDetail;
+    if (previous != null && previous.isActive) navigator.removeRoute(previous);
+    final route = MaterialPageRoute<void>(
+      builder:
+          (_) => ProjectDetailPage(
+            useCases: widget.useCases,
+            session: actor,
+            project: project,
+            onSessionExpired: () => endSession(actor, expired: true),
+            onProjectUnavailable: () {
+              if (mounted && session == actor) unawaited(reload());
+            },
+          ),
+    );
+    activeDetail = route;
+    await navigator.push(route);
+    if (identical(activeDetail, route)) activeDetail = null;
+  }
+
+  void endSession(ViewerSession actor, {bool expired = false}) {
+    if (!mounted || session != actor) return;
+    final detail = activeDetail;
+    activeDetail = null;
+    setState(() {
+      session = null;
+      projects = null;
+      pendingNotification = null;
+      notificationsEnabled = false;
+      notificationsBusy = false;
+      password.clear();
+      error = expired ? 'La sesión venció. Vuelve a iniciar sesión.' : null;
+    });
+    if (detail != null && detail.isActive) {
+      Navigator.of(context).removeRoute(detail);
+    }
+    // Clearing the session does not depend on the network response.
+    stoppingNotifications = disableNotifications();
+  }
+
+  Future<void> disableNotifications() async {
     try {
       await widget.useCases.notifications?.disable();
     } catch (_) {
-      /* Remove the local login even if the network is unavailable. */
+      // The authenticated viewer has already been cleared.
     }
-    if (mounted) {
-      setState(() {
-        session = null;
-        projects = null;
-        notificationsEnabled = false;
-      });
+  }
+
+  void logout() {
+    final actor = session;
+    if (actor != null) endSession(actor);
+  }
+
+  Future<List<ViewerProject>> loadProjects(ViewerSession actor) async {
+    try {
+      final values = await widget.useCases.projects(actor);
+      return mounted && session == actor ? values : [];
+    } on ViewerException catch (failure) {
+      if (failure.status != 401) rethrow;
+      endSession(actor, expired: true);
+      return [];
     }
   }
 
@@ -171,7 +227,7 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
       setState(() {
         session = value;
         busy = false;
-        projects = widget.useCases.projects(value);
+        projects = loadProjects(value);
       });
       unawaited(bindNotifications(value));
     } catch (e) {
@@ -186,7 +242,9 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
   }
 
   Future<void> reload() async {
-    final future = widget.useCases.projects(session!);
+    final actor = session;
+    if (actor == null) return;
+    final future = loadProjects(actor);
     setState(() => projects = future);
     try {
       await future;
@@ -332,17 +390,10 @@ class _ProjectExplorerPageState extends State<ProjectExplorerPage> {
                                   : project.description,
                             ),
                             trailing: const Icon(Icons.chevron_right),
-                            onTap:
-                                () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder:
-                                        (_) => ProjectDetailPage(
-                                          useCases: widget.useCases,
-                                          session: session!,
-                                          project: project,
-                                        ),
-                                  ),
-                                ),
+                            onTap: () {
+                              final actor = session;
+                              if (actor != null) openProject(actor, project);
+                            },
                           ),
                         ),
                     ],

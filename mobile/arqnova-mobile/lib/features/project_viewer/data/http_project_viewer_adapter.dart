@@ -50,6 +50,9 @@ class HttpProjectViewerAdapter implements ProjectViewerPort {
     if (response.statusCode == 403) {
       throw const ViewerException('No tienes acceso a este proyecto.', 403);
     }
+    if (response.statusCode == 404) {
+      throw const ViewerException('Este proyecto ya no está disponible.', 404);
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ViewerException(
         'No se pudo completar la consulta (${response.statusCode}).',
@@ -114,7 +117,8 @@ class HttpProjectViewerAdapter implements ProjectViewerPort {
   Future<ViewerDiagram> diagram(ViewerSession session, String project) async {
     final data = await _read('${_project(project)}/diagram', session) as Map;
     final model = Map<String, dynamic>.from(data['model'] as Map);
-    if (model['format'] != 'uml-class-diagram' ||
+    if ((data['projectId'] != null && data['projectId'] != project) ||
+        model['format'] != 'uml-class-diagram' ||
         model['classes'] is! List ||
         model['relations'] is! List) {
       throw const ViewerException(
