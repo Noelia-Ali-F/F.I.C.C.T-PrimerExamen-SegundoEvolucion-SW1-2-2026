@@ -71,7 +71,9 @@ public final class ConsultativeEvidence {
                     String clazz=scoped.group(1),kind=scoped.group(2),name=scoped.group(3);
                     boolean present=rows(context.diagram().get("classes")).stream().anyMatch(c->normal(clazz).equals(normal((String)c.get("name")))
                             &&names(c.get(kind.equals("metodo")?"methods":"attributes")).contains(normal(name)));
-                    if(!present)replacement="No consta "+name+" como "+kind+" de "+clazz+" en el UML vigente. Puede evaluarse como propuesta, pero no como un cambio aplicado.";
+                    // A word before "tiene" may be an adverb ("Venta solo tiene...").
+                    // Only validate a scoped member when the captured owner is a known class.
+                    if(classNames.contains(normal(clazz))&&!present)replacement="No consta "+name+" como "+kind+" de "+clazz+" en el UML vigente. Puede evaluarse como propuesta, pero no como un cambio aplicado.";
                 }
                 var member=Pattern.compile("\\b(?:mantener|conservar|cambiar|reemplazar|sustituir|tiene|contiene|posee|incluye)\\s+(?:(?:el|un)\\s+)?(?:atributo|m[eé]todo)\\s+([\\p{L}][\\p{L}\\p{N}_-]*)",FLAGS).matcher(value);
                 if(replacement==null&&member.find()&&!members.contains(normal(member.group(1))))replacement="Escenario hipotético, no estructura actual: "+sentence+"\nAclaración: "+member.group(1)+" no figura como miembro del UML vigente; una propuesta no demuestra que se haya aplicado.";

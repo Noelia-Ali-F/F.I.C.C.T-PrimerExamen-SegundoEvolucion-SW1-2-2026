@@ -47,6 +47,7 @@ class ConsultativeEvidenceTest {
         String text="**Carlos** creó la clase Venta.\nPodrías crear una clase Factura.\nSi se agrega el atributo Estado, sería una alternativa.\n```java\nclass Factura { String estado; }\n```";
         assertThat(facts.validate(turn(Mode.ADVISE,"Asesora"),context,text)).contains("**Carlos** creó la clase Venta","Podrías crear una clase Factura","Si se agrega","class Factura");
         assertThat(facts.validate(turn(Mode.ASK,"Explica los miembros"),context,"Cada Venta tiene el atributo total.")).contains("Cada Venta tiene el atributo total.");
+        assertThat(facts.validate(turn(Mode.MEDIATE,"Compara"),context,"La clase Venta solo tiene el atributo total y el método confirmar.")).isEqualTo("La clase Venta solo tiene el atributo total y el método confirmar.");
     }
     @Test void rejectsUnsupportedMarkdownPassiveAuthorsAndInventedElements(){
         var context=context(graph("1","0..*"),List.of(),List.of());
