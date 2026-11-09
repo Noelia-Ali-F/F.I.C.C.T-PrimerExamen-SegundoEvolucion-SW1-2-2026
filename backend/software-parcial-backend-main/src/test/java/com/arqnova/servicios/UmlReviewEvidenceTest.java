@@ -90,4 +90,17 @@ class UmlReviewEvidenceTest {
         var graph=context(List.of(clazz("a","Orden_Venta",List.of(),List.of()),clazz("b","OrdenVenta",List.of(),List.of())),List.of());
         assertThat(answer(graph).findings()).isEmpty();assertThat(answer(graph).text()).doesNotContain("Responsabilidad","descripción inventada");
     }
+    @Test void namedAndQuotedReferencesDoNotInventAnElementCalledLlamado(){
+        var result=answer(model(),new Finding("ERROR",null,"El atributo llamado total tiene un tipo incorrecto."));
+        assertThat(result.findings().get(0).message()).doesNotContain("elemento llamado");
+        assertThat(result.findings().get(0).elementId()).isEqualTo("total");
+    }
+    @Test void relationLabelsCannotBypassCardinalEndpointValidation(){
+        var c=model();var relation=new LinkedHashMap<>((Map<String,Object>)((List<?>)c.diagram().get("relations")).get(0));relation.put("label","realiza");relation.put("targetMultiplicity","");
+        var graph=context((List<?>)c.diagram().get("classes"),List.of(relation));
+        assertThat(review.local(request("Revisa la relación realiza"),graph)).isEmpty();
+        var result=answer(graph,new Finding("INFO",null,"Relación \"realiza\" indica que cada Cliente está asociado a una o más Ventas. Se recomienda definir la multiplicidad del destino."));
+        assertThat(result.findings()).noneMatch(f->f.message().contains("asociado a una o más"));
+        assertThat(result.findings()).anyMatch(f->f.message().contains("targetMultiplicity=no especificada")&&f.message().contains("origen Cliente"));
+    }
 }

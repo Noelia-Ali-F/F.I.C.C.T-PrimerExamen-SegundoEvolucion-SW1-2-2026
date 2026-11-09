@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 /** Snapshot-only review evidence. Does not mutate UML or trust provider severity as proof. */
 public final class UmlReviewEvidence {
     private final ConsultativeEvidence references=new ConsultativeEvidence();
-    private static final Pattern TARGET=Pattern.compile("\\b(clase|atributo|metodo|relacion)\\s+[\"«']?([\\p{L}][\\p{L}\\p{N}_-]*)");
+    private static final Pattern TARGET=Pattern.compile("\\b(clase|atributo|metodo|relacion)\\s+(?:(?:llamado|llamada|denominado|denominada|de nombre)\\s+)?[\"«']?([\\p{L}][\\p{L}\\p{N}_-]*)");
     private static final Set<String> GENERIC=Set.of("actual","solicitada","solicitado","con","sin","entre","de","del","que","es","no","duplicado","duplicada","inexistente","asociacion");
     public Optional<Answer> local(Turn turn,Context context){
         if(rows(context.diagram().get("classes")).isEmpty())return Optional.of(new Answer(
@@ -66,6 +66,9 @@ public final class UmlReviewEvidence {
         if(id!=null&&element==null)return new Finding("INFO",null,"No consta el elemento con ID "+clip(id,128)+". La observación del proveedor no se confirmó; solicita el ID correcto.");
         if(value.matches("(?s).*\\b(?:propone|propongo|acordaron|decidieron|consenso|propuesta de)\\b.*")||value.matches("(?s).*\\b(?!(?:se|te|le|les|que|es|lo|la|el|no|ia|asistente)\\b)[\\p{L}]+\\s+(?:sugiere|recomienda|prefiere|eligio|apoyo|decidio|acordo)\\b.*"))return new Finding("INFO",null,
                 "Propuestas y decisiones individuales: consulte las declaraciones literales del resumen con sus autores. No prueban aplicación al UML ni consenso del equipo.");
+        var relation=element!=null&&element.containsKey("sourceId")?element:findRelation(message,context);
+        if(relation!=null&&(value.contains("multiplic")||value.contains("cardinal")||value.contains("extremo")||value.contains("por cada")))return new Finding("INFO",text(relation.get("id")),
+                "Recomendación de cardinalidad pendiente de confirmar con el dominio. "+ends(context,relation)+" Un nuevo valor requiere especificar cuántos elementos se cuentan por cada instancia del otro extremo; no se deduce del valor opuesto ni se aplica desde Revisión.");
         var missing=missingTarget(message,context);
         if(missing.isPresent())return new Finding("INFO",null,"No consta el elemento "+missing.get()+". "+(advisory?"Recomendación hipotética, no estructura actual: "+clip(references.validateReferences(turn,context,message),1100):"No se confirma el problema indicado por la IA."));
         // Bind name-only observations only when they identify exactly one snapshot element.
@@ -74,9 +77,6 @@ public final class UmlReviewEvidence {
             if(named.size()==1){id=text(named.get(0).get("id"));element=named.get(0);}
         }
         if(value.contains("duplicad")&&id!=null){String finalId=id;var actual=verified.stream().filter(f->"ERROR".equals(f.severity())&&Objects.equals(finalId,f.elementId())).findFirst();if(actual.isPresent())return actual.get();}
-        var relation=element!=null&&element.containsKey("sourceId")?element:findRelation(message,context);
-        if(relation!=null&&(value.contains("multiplic")||value.contains("cardinal")||value.contains("extremo")||value.contains("por cada")))return new Finding("INFO",text(relation.get("id")),
-                "Recomendación de cardinalidad pendiente de confirmar con el dominio. "+ends(context,relation)+" Un nuevo valor requiere especificar cuántos elementos se cuentan por cada instancia del otro extremo; no se deduce del valor opuesto ni se aplica desde Revisión.");
         String facts=element==null?"":counts(context,element);
         boolean countClaim=value.matches(".*\\b(?:parametros?|atributos?|metodos?|relaciones?)\\b.*")&&value.matches(".*\\b(?:\\d+|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\\b.*");
         if(countClaim)return new Finding("INFO",id,"Comprobación de cantidades del snapshot: "+(facts.isBlank()?totals(context):facts)+" La cantidad o el problema sugerido por la IA no se acepta como error sin evidencia específica.");
@@ -124,14 +124,15 @@ public final class UmlReviewEvidence {
         while(matcher.find()){
             String kind=matcher.group(1),name=matcher.group(2);if(GENERIC.contains(name))continue;
             if(kind.equals("relacion")&&findRelation(instruction,context)!=null)continue;
-            boolean found=elements(context,kind).stream().anyMatch(e->normal(text(e.get("id"))).equals(name)||normal(text(e.get("name"))).equals(name));
+            boolean found=elements(context,kind).stream().anyMatch(e->normal(text(e.get("id"))).equals(name)||normal(text(e.get("name"))).equals(name)||(kind.equals("relacion")&&normal(text(e.get("label"))).equals(name)));
             if(!found)return Optional.of(name);
         }
         return Optional.empty();
     }
     private List<Map<String,Object>> elements(Context c,String kind){if(kind.equals("clase"))return rows(c.diagram().get("classes"));if(kind.equals("relacion"))return rows(c.diagram().get("relations"));return rows(c.diagram().get("classes")).stream().flatMap(v->rows(v.get(kind.equals("atributo")?"attributes":"methods")).stream()).toList();}
-    private List<Map<String,Object>> referenced(String text,Context context){var matcher=TARGET.matcher(normal(text));var result=new LinkedHashMap<String,Map<String,Object>>();while(matcher.find()){String name=matcher.group(2);for(var element:index(context).values())if(normal(text(element.get("name"))).equals(name)||normal(text(element.get("id"))).equals(name))result.put(text(element.get("id")),element);}return new ArrayList<>(result.values());}
-    private Map<String,Object> findRelation(String message,Context context){String value=normal(message);var matches=rows(context.diagram().get("relations")).stream().filter(r->mentions(value,text(r.get("id")))||(mentions(value,className(context,text(r.get("sourceId"))))&&mentions(value,className(context,text(r.get("targetId")))))).toList();return matches.size()==1?matches.get(0):null;}
+    private List<Map<String,Object>> referenced(String text,Context context){var matcher=TARGET.matcher(normal(text));var result=new LinkedHashMap<String,Map<String,Object>>();while(matcher.find()){String name=matcher.group(2);if(matcher.group(1).equals("relacion")){var relation=findRelation(text,context);if(relation!=null)result.put(text(relation.get("id")),relation);}for(var element:elements(context,matcher.group(1)))if(normal(text(element.get("name"))).equals(name)||normal(text(element.get("id"))).equals(name))result.put(text(element.get("id")),element);}return new ArrayList<>(result.values());}
+    private Map<String,Object> findRelation(String message,Context context){String value=normal(message);var matches=rows(context.diagram().get("relations")).stream().filter(r->mentions(value,text(r.get("id")))||namedLabel(value,text(r.get("label")))||(mentions(value,className(context,text(r.get("sourceId"))))&&mentions(value,className(context,text(r.get("targetId")))))).toList();return matches.size()==1?matches.get(0):null;}
+    private boolean namedLabel(String value,String label){return !label.isBlank()&&Pattern.compile("\\brelacion\\s+[\"']?"+Pattern.quote(normal(label))+"(?![\\p{L}\\p{N}_])").matcher(value).find();}
     private boolean mentions(String value,String name){return !name.isBlank()&&Pattern.compile("(?<![\\p{L}\\p{N}_])"+Pattern.quote(normal(name))+"(?![\\p{L}\\p{N}_])").matcher(value).find();}
     private Map<String,Map<String,Object>> index(Context context){var index=new LinkedHashMap<String,Map<String,Object>>();for(var c:rows(context.diagram().get("classes"))){index.put(text(c.get("id")),c);for(var key:List.of("attributes","methods"))for(var member:rows(c.get(key)))index.put(text(member.get("id")),member);}for(var r:rows(context.diagram().get("relations")))index.put(text(r.get("id")),r);return index;}
     private List<String> parameters(Map<String,Object> method){
