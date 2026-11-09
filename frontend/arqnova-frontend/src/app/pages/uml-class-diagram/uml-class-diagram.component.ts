@@ -1,3 +1,4 @@
+import { reconcileDiagram } from '../../domain/uml/reconcile-diagram';
 import { Subscription } from 'rxjs';
 import { AiConversationService } from './ai-conversation.service';
 import { ProjectAiChatComponent } from './project-ai-chat.component';
@@ -32,6 +33,8 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private teamAiWatching = false;
   private canonicalRefreshing = false;
   private canonicalModelVersion = 0;
+  private canonicalModel?: UmlDiagramModel;
+  private canonicalRefreshPending = false;
   private localModelDirty = false;
   private canonicalRefreshAgain = false;
   private readonly backendGenerator = inject(UmlBackendGeneratorService);
@@ -172,6 +175,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
       next: project => {
         this.model.set(this.normalizeModel(project.model));
         this.canonicalModelVersion = project.modelVersion ?? 0;
+        this.canonicalModel = this.normalizeModel(project.model);
         this.lastSavedAt.set(new Date(project.updatedAt));
         this.status.set('Proyecto cargado desde PostgreSQL');
         this.watchTeamModeling();
@@ -411,7 +415,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
 
   startDrag(event: PointerEvent, item: UmlClassNode) { if (event.button !== 0) return; this.selectClass(item);this.dragCandidate={id:item.id,startX:event.clientX,startY:event.clientY,event};if(this.canEdit('class',item.id))this.beginDragging(event,item); }
   drag(event: PointerEvent) { this.shareCursor(event);if(this.dragCandidate&&!this.dragging&&Math.hypot(event.clientX-this.dragCandidate.startX,event.clientY-this.dragCandidate.startY)>4){const candidate=this.dragCandidate,item=this.classes().find(value=>value.id===candidate.id);this.dragCandidate=null;if(item)this.requestLock('class',item.id,()=>this.beginDragging(candidate.event,item));} if (!this.dragging) return; const rect = this.canvas.nativeElement.getBoundingClientRect(); const x = Math.max(10, Math.min(this.canvasWidth - this.cardWidth - 10, (event.clientX - rect.left) / this.zoom() - this.dragging.offsetX)); const y = Math.max(10, Math.min(this.canvasHeight - 220, (event.clientY - rect.top) / this.zoom() - this.dragging.offsetY)); this.model.set({ ...this.model(), classes: this.classes().map(item => item.id === this.dragging?.id ? { ...item, x: Math.round(x), y: Math.round(y) } : item) }); }
-  endDrag() { this.dragCandidate=null;if (this.dragging) { const id=this.dragging.id; const item=this.classes().find(value=>value.id===id); this.dragging = null; this.persist('Posición guardada'); if(item)this.broadcast('class:move',id,item,`movió ${item.name}`,'class'); } }
+  endDrag() { this.dragCandidate=null;if (this.dragging) { const id=this.dragging.id; const item=this.classes().find(value=>value.id===id); this.dragging = null; this.persist('Posición guardada'); if(item)this.broadcast('class:move',id,item,`movió ${item.name}`,'class'); } if(this.canonicalRefreshPending)this.refreshCanonicalModel(); }
   leaveCanvas() { this.endDrag(); this.broadcastCursor(0, 0, false); }
 
   relationGeometry(relation: UmlRelation) { const source = this.classes().find(i => i.id === relation.sourceId), target = this.classes().find(i => i.id === relation.targetId); if (!source || !target) return { x1: 0, y1: 0, x2: 0, y2: 0, midX: 0, midY: 0, fromLabelX: 0, fromLabelY: 0, toLabelX: 0, toLabelY: 0 }; const sc = { x: source.x + this.cardWidth / 2, y: source.y + this.classHeight(source) / 2 }, tc = { x: target.x + this.cardWidth / 2, y: target.y + this.classHeight(target) / 2 }; const a = this.rectangleEdge(sc, tc, this.cardWidth, this.classHeight(source)), b = this.rectangleEdge(tc, sc, this.cardWidth, this.classHeight(target)); const distance = Math.hypot(b.x - a.x, b.y - a.y) || 1, ux = (b.x - a.x) / distance, uy = (b.y - a.y) / distance; return { x1: a.x, y1: a.y, x2: b.x, y2: b.y, midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2, fromLabelX: a.x + ux * 17 - uy * 13, fromLabelY: a.y + uy * 17 + ux * 13, toLabelX: b.x - ux * 17 - uy * 13, toLabelY: b.y - uy * 17 + ux * 13 }; }
@@ -531,7 +535,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private watchTeamModeling(){
     if(this.teamAiWatching)return;this.teamAiWatching=true;
     this.teamAiSubscriptions.add(this.teamAi.status(this.projectId).subscribe({next:status=>{
-      if(!status.enabled||!status.modes?.includes('MODEL'))return;
+      if(!status.enabled)return;
       this.teamAiSubscriptions.add(this.teamAi.watch(this.projectId).subscribe(change=>{
         if(change.state==='CONNECTED')this.refreshCanonicalModel();
         if(change.mode==='MODEL'&&change.state==='COMPLETED')this.syncTeamModel(change.diagramVersion);
@@ -541,17 +545,63 @@ export class UmlClassDiagramComponent implements OnDestroy {
   syncTeamModel(version?: number) {
     if (version === undefined || version > this.canonicalModelVersion) this.refreshCanonicalModel();
   }
-  private refreshCanonicalModel(){
-    if(this.canonicalRefreshing){this.canonicalRefreshAgain=true;return;}
-    if(this.localModelDirty||this.pendingSaveMessage||this.saveInFlight||this.dragging||this.dragCandidate){this.status.set('El equipo actualizó el diagrama. Conserva tu edición local y recarga antes de guardar.');return;}
-    const original=this.model();const clean=()=>this.model()===original&&!this.localModelDirty&&!this.pendingSaveMessage&&!this.saveInFlight&&!this.dragging&&!this.dragCandidate;
-    this.canonicalRefreshing=true;
-    this.teamAiSubscriptions.add(this.projectStore.get(this.projectId,clean).subscribe({next:project=>{
-      this.canonicalRefreshing=false;
-      if(clean()){this.canonicalModelVersion=project.modelVersion??0;this.model.set(this.normalizeModel(project.model));this.lastSavedAt.set(new Date(project.updatedAt));this.status.set('Diagrama sincronizado con el equipo');}
-      else this.status.set('Hay cambios del equipo. Tu edición local se conserva; recarga antes de guardar.');
-      if(this.canonicalRefreshAgain){this.canonicalRefreshAgain=false;this.refreshCanonicalModel();}
-    },error:()=>{this.canonicalRefreshing=false;this.canonicalRefreshAgain=false;this.status.set('No se pudo recuperar el diagrama actualizado. Tu copia local se conserva.');}}));
+  private refreshCanonicalModel() {
+    if (this.canonicalRefreshing) { this.canonicalRefreshAgain = true; return; }
+    this.canonicalRefreshPending = true;
+    if (this.saveInFlight || this.dragging || this.dragCandidate) return;
+    const original = this.model();
+    const dirty = this.localModelDirty || !!this.pendingSaveMessage;
+    const base = this.canonicalModel;
+    if (dirty && !base) {
+      this.status.set('Hay cambios del equipo. Conserva tu edición local y recarga antes de guardar.');
+      return;
+    }
+
+    const canApply = () => this.model() === original && !this.saveInFlight && !this.dragging && !this.dragCandidate;
+    const reconcile = (project: { model: UmlDiagramModel; modelVersion?: number }) => {
+      if (!canApply() || (project.modelVersion ?? 0) < this.canonicalModelVersion) return null;
+      const remote = this.normalizeModel(project.model);
+      return dirty ? reconcileDiagram(base!, original, remote) : { model: remote, dirty: false };
+    };
+
+    this.canonicalRefreshing = true;
+    this.canonicalRefreshPending = false;
+    this.teamAiSubscriptions.add(this.projectStore.get(this.projectId, project => !!reconcile(project)).subscribe({
+      next: project => {
+        this.canonicalRefreshing = false;
+        const next = reconcile(project);
+        if (next) {
+          const previousVersion = this.canonicalModelVersion;
+          this.canonicalModelVersion = project.modelVersion ?? 0;
+          this.canonicalModel = this.normalizeModel(project.model);
+          this.model.set(next.model);
+          this.lastSavedAt.set(new Date(project.updatedAt));
+          this.localModelDirty = next.dirty;
+          if (!next.dirty) {
+            if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+            this.saveTimer = null;
+            this.pendingSaveMessage = null;
+            this.explicitSavePending = false;
+          } else if (this.canonicalModelVersion > previousVersion) {
+            this.persist(this.pendingSaveMessage ?? 'Edición local sincronizada');
+          }
+          this.status.set('Diagrama sincronizado con el equipo');
+        } else if (!canApply()) {
+          this.canonicalRefreshPending = true;
+        } else {
+          this.status.set('Tu edición y la del equipo afectan los mismos datos. Se conservó tu copia local.');
+        }
+        if (this.canonicalRefreshAgain || (this.canonicalRefreshPending && !this.saveInFlight && !this.dragging && !this.dragCandidate)) {
+          this.canonicalRefreshAgain = false;
+          this.refreshCanonicalModel();
+        }
+      },
+      error: () => {
+        this.canonicalRefreshing = false;
+        this.canonicalRefreshAgain = false;
+        this.status.set('No se pudo recuperar el diagrama actualizado. Tu copia local se conserva.');
+      }
+    }));
   }
   private updateModel(model:UmlDiagramModel,message:string,type?:string,elementId?:string,element?:unknown,elementType?:UmlLockElementType){this.model.set(model);this.persist(message);if(type&&elementId)this.broadcast(type,elementId,element,message,elementType);}
   private persist(message:string){this.localModelDirty=true;const now=new Date();const model={...this.model(),updatedAt:now.toISOString()};this.model.set(model);this.projectStore.cacheModel(this.projectId,model);this.pendingSaveMessage=message;if(this.saveTimer!==null)window.clearTimeout(this.saveTimer);if(!this.saveInFlight)this.saveTimer=window.setTimeout(()=>this.flushPersist(),350);}
@@ -564,9 +614,11 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.saveTimer = null;
     this.saveInFlight = true;
     this.status.set('Guardando en PostgreSQL...');
-    this.projectStore.saveModel(this.projectId, this.model()).subscribe({
+    const submitted = this.model();
+    this.projectStore.saveModel(this.projectId, submitted).subscribe({
       next: project => {
         this.canonicalModelVersion = project.modelVersion ?? 0;
+        this.canonicalModel = submitted;
         this.lastSavedAt.set(new Date(project.updatedAt));
         this.status.set(message);
         this.localModelDirty = this.pendingSaveMessage !== null;
@@ -576,6 +628,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
           this.showNotice('success', 'Proyecto guardado correctamente y edición liberada.');
         }
         if (this.pendingSaveMessage) this.saveTimer = window.setTimeout(() => this.flushPersist(), 50);
+        if (this.canonicalRefreshPending) this.refreshCanonicalModel();
       },
       error: error => {
         this.saveInFlight = false;
@@ -584,6 +637,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
           : 'No se pudo guardar. La copia local permanece disponible.';
         this.status.set(text);
         if (explicit) this.showNotice('error', text);
+        if ((error?.status === 409 && this.canonicalModel) || this.canonicalRefreshPending) this.refreshCanonicalModel();
       }
     });
   }
@@ -617,7 +671,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private lockKey(elementType:UmlLockElementType,elementId:string){return `${elementType}:${elementId}`;}
   private currentUserId(){return this.auth.currentUser()?.username??'';}
   activityTarget(event:UmlLiveEvent){const labels:Record<string,string>={class:'Clase',attribute:'Atributo',relation:'Relación'};const element=(event.data?.element||event.data?.attribute) as any;const name=element?.name||element?.label;return event.elementType?`${labels[event.elementType]||event.elementType}: ${name||event.elementId||'sin identificar'}`:'';}
-  private applyRemoteMutation(event:UmlLiveEvent){const element=(event.data?.element||null) as any;let classes=this.classes(),relations=this.relations();switch(event.type){case'class:create':case'class:update':case'class:move':if(element)classes=[...classes.filter(i=>i.id!==element.id),element];break;case'attribute:create':{const classId=event.data?.classId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.some(value=>value.id===attribute.id)?item.attributes:[...item.attributes,attribute]}:item);break;}case'attribute:update':{const classId=event.data?.classId,attributeId=event.data?.attributeId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attributeId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.map(value=>value.id===attributeId?attribute:value)}:item);break;}case'attribute:delete':{const classId=event.data?.classId,attributeId=event.data?.attributeId;if(!classId||!attributeId)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.filter(value=>value.id!==attributeId)}:item);break;}case'class:delete':{const linkedIds=relations.filter(r=>r.sourceId===event.elementId||r.targetId===event.elementId).map(r=>r.associationClassId).filter((value):value is string=>!!value);classes=classes.filter(i=>i.id!==event.elementId&&!linkedIds.includes(i.id));relations=relations.filter(r=>r.sourceId!==event.elementId&&r.targetId!==event.elementId).map(r=>r.associationClassId===event.elementId?{...r,associationClassId:undefined}:r);break;}case'relation:create':case'relation:update':if(element)relations=[...relations.filter(i=>i.id!==element.id),element];break;case'relation:delete':relations=relations.filter(i=>i.id!==event.elementId);break;default:return;}this.model.set({...this.model(),classes,relations,updatedAt:new Date().toISOString()});this.projectStore.upsertCollaborative(this.projectId,this.model().title,this.model());this.persist(`${event.userName||'Otro usuario'} ${event.operation||'actualizó el diagrama'}`);}
+  private applyRemoteMutation(event:UmlLiveEvent){const element=(event.data?.element||null) as any;let classes=this.classes(),relations=this.relations();switch(event.type){case'class:create':case'class:update':case'class:move':if(element)classes=[...classes.filter(i=>i.id!==element.id),element];break;case'attribute:create':{const classId=event.data?.classId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.some(value=>value.id===attribute.id)?item.attributes:[...item.attributes,attribute]}:item);break;}case'attribute:update':{const classId=event.data?.classId,attributeId=event.data?.attributeId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attributeId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.map(value=>value.id===attributeId?attribute:value)}:item);break;}case'attribute:delete':{const classId=event.data?.classId,attributeId=event.data?.attributeId;if(!classId||!attributeId)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.filter(value=>value.id!==attributeId)}:item);break;}case'class:delete':{const linkedIds=relations.filter(r=>r.sourceId===event.elementId||r.targetId===event.elementId).map(r=>r.associationClassId).filter((value):value is string=>!!value);classes=classes.filter(i=>i.id!==event.elementId&&!linkedIds.includes(i.id));relations=relations.filter(r=>r.sourceId!==event.elementId&&r.targetId!==event.elementId).map(r=>r.associationClassId===event.elementId?{...r,associationClassId:undefined}:r);break;}case'relation:create':case'relation:update':if(element)relations=[...relations.filter(i=>i.id!==element.id),element];break;case'relation:delete':relations=relations.filter(i=>i.id!==event.elementId);break;default:return;}this.model.set({...this.model(),classes,relations,updatedAt:new Date().toISOString()});this.projectStore.upsertCollaborative(this.projectId,this.model().title,this.model());}
   private normalizeModel(value:any):UmlDiagramModel {return diagramRules.normalizeModel(value);}
   private parseLegacyAttribute(classId:string,value:string,index:number):UmlAttribute{return diagramRules.parseLegacyAttribute(classId,value,index);}
   private emptyAttribute():UmlAttribute{return{id:'',name:'',type:'String',isPrimaryKey:false};} private emptyMethod():UmlMethod{return{id:'',name:'',parameters:'',returnType:'void'};}

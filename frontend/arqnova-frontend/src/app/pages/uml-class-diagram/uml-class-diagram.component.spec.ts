@@ -62,6 +62,49 @@ describe('UmlClassDiagramComponent', () => {
     expect(get).toHaveBeenCalledTimes(1);
   });
 
+  it('muestra un atributo de IA aunque una edición manual en otra clase ya haya causado un 409', () => {
+    const base = { ...DEFAULT_UML_MODEL, classes: DEFAULT_UML_MODEL.classes.slice(0, 2), relations: [] };
+    const local = { ...base, classes: [base.classes[0], { ...base.classes[1], description: 'Edición manual' }] };
+    const attribute = { id: 'ai-description', name: 'Descripcion', type: 'String', isPrimaryKey: false };
+    const remote = { ...local, classes: [{ ...base.classes[0], attributes: [...base.classes[0].attributes, attribute] }, local.classes[1]] };
+    const store = TestBed.inject(UmlProjectStoreService);
+    const get = vi.spyOn(store, 'get').mockReturnValue(of({
+      id: 'project-test', name: base.title, description: '', status: 'EN_EDICION', createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(), model: remote, modelVersion: 93
+    }));
+    const save = vi.spyOn(store, 'saveModel');
+    (component as any).canonicalModel = base;
+    (component as any).canonicalModelVersion = 92;
+    (component as any).localModelDirty = true;
+    component.model.set(local);
+
+    component.syncTeamModel(93);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(component.classes()[0].attributes).toContainEqual(attribute);
+    expect(component.classes()[1].description).toBe('Edición manual');
+    expect((component as any).localModelDirty).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('reintenta la sincronización al terminar un guardado en curso', () => {
+    const remote = { ...DEFAULT_UML_MODEL, title: 'Cambio del equipo' };
+    const store = TestBed.inject(UmlProjectStoreService);
+    const project = {
+      id: 'project-test', name: remote.title, description: '', status: 'EN_EDICION' as const,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), model: remote, modelVersion: 93
+    };
+    const save = new Subject<typeof project>();
+    vi.spyOn(store, 'saveModel').mockReturnValue(save);
+    const get = vi.spyOn(store, 'get').mockReturnValue(of(project));
+    (component as any).pendingSaveMessage = 'Edición';
+    (component as any).flushPersist();
+    component.syncTeamModel(93);
+    expect(get).not.toHaveBeenCalled();
+    save.next({ ...project, modelVersion: 92 });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(component.model().title).toBe('Cambio del equipo');
+  });
+
   it.each(['pendiente','fallida'])('conserva una edición local %s al recibir una modificación de IA del equipo', state => {
     const events=new Subject<any>();
     (component as any).teamAi={status:()=>of({enabled:true,modes:['MODEL']}),watch:()=>events};
