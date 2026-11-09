@@ -53,7 +53,7 @@ describe('panel de conversación del proyecto',()=>{
     mode:'MODEL',instruction:'Cambia la multiplicidad',state:'PENDING',answer:null,errorCode:null,
     diagramVersion:0,createdAt:'2026-11-09T10:00:00Z',updatedAt:'2026-11-09T10:00:00Z'};
    service.send.mockReturnValue(of(pending) as any);
-   service.get.mockReturnValue(of({...pending,state:'COMPLETED',diagramVersion:85}));
+   service.get.mockReturnValue(of({...pending,state:'COMPLETED',diagramVersion:85,answer:{text:'Aplicada',findings:[],provider:'FAKE',model:'test',operations:[{}]}}));
    const completed=vi.fn();component.modelCompleted.subscribe(completed);
    component.mode='MODEL';component.instruction=pending.instruction;component.send();
    expect(completed).not.toHaveBeenCalled();
@@ -61,6 +61,15 @@ describe('panel de conversación del proyecto',()=>{
    expect(completed).toHaveBeenCalledExactlyOnceWith(85);
    fixture.destroy();
   } finally {vi.useRealTimers();}
+ });
+ it('no presenta una aclaracion de Modelado como un guardado',()=>{
+  const processed: AiTurn={requestId:'request-local',projectId:'p',authorId:'u',authorName:'Ana',
+    mode:'MODEL',instruction:'Cambia algo',state:'COMPLETED',diagramVersion:3,errorCode:null,
+    createdAt:'2026-11-09T10:00:00Z',updatedAt:'2026-11-09T10:00:00Z',
+    answer:{text:'Indica el elemento',findings:[],provider:'LOCAL',model:'modeling-clarification',operations:[]}};
+  const {fixture}=setup(true,['MODEL'],{turns:[processed],nextCursor:null});
+  expect(fixture.nativeElement.textContent).toContain('Solicitud procesada');
+  expect(fixture.nativeElement.textContent).not.toContain('Diagrama guardado');
  });
  const turn = (requestId: string, day: number): AiTurn => ({
   requestId, projectId:'p', authorId:'u', authorName:'Ana', mode:'ASK', instruction:requestId,

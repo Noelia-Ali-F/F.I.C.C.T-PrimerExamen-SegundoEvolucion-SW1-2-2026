@@ -27,9 +27,12 @@ public interface ProjectUseCase {
  UmlDiagramEntity saveDiagram(String diagramId, String projectId, Map<String, Object> model,
                                         Integer expectedVersion) ;
  UmlDiagramEntity saveDiagramFromRest(String diagramId, String projectId, Map<String,Object> model, int expectedVersion, String actor);
- default void recordAiChanges(String projectId,Map<String,Object> before,Map<String,Object> after,String actor,String requestId,String provider) { throw new UnsupportedOperationException("Bitácora IA no configurada"); }
+ default void recordAiChanges(String projectId,Map<String,Object> before,Map<String,Object> after,String actor,String requestId,String provider,String instruction) { throw new UnsupportedOperationException("Bitácora IA no configurada"); }
  Optional<UmlDiagramEntity> findDiagramByProjectId(String projectId) ;
  ProjectMemberEntity addMember(String projectId, String userId, ProjectMemberRole role) ;
+ default ProjectMemberRole requireWriteAccess(String projectId,String userId){
+  return requireAccess(projectId,userId,ProjectMemberRole.OWNER,ProjectMemberRole.EDITOR);
+ }
  ProjectMemberEntity acceptInvitation(String projectId, String userId, ProjectMemberRole invitedRole) ;
  void deleteProject(String projectId) ;
  List<ProjectEntity> listAccessible(String userId) ;

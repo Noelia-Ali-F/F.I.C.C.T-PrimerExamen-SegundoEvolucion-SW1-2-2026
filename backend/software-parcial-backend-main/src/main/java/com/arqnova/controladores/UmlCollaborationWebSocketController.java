@@ -45,6 +45,7 @@ public class UmlCollaborationWebSocketController {
                 .orElseThrow(() -> new IllegalArgumentException("Usuario inexistente"));
         if (Boolean.FALSE.equals(user.getHabilitado())) throw new IllegalArgumentException("Cuenta deshabilitada");
 
+        event.setModelVersion(null);
         event.setSessionId(sessionId);
         event.setUserId(username);
         event.setUserName(user.getNombreCompleto() == null || user.getNombreCompleto().isBlank() ? username : user.getNombreCompleto());
@@ -84,8 +85,17 @@ public class UmlCollaborationWebSocketController {
                         event.getUserId(), headers.getSessionId());
             }
             service.apply(event);
-            messaging.convertAndSend(topic(sessionId), event);
+            if (event.getModelVersion() == null) {
+                messaging.convertAndSend(topic(sessionId), event);
+            } else {
+                messaging.convertAndSend("/topic/ai/" + event.getProjectId(), Map.of(
+                        "projectId", event.getProjectId(), "state", "DIAGRAM_UPDATED", "diagramVersion", event.getModelVersion()));
             }
+            }
+        } catch (com.arqnova.modelo.excepciones.DuplicateResourceException | IllegalArgumentException conflict) {
+            messaging.convertAndSend(topic(sessionId), UmlCollaborationEvent.builder().type("diagram:conflict")
+                    .projectId(event.getProjectId()).sessionId(sessionId).operation(conflict.getMessage())
+                    .data(Map.of("requesterId", username, "requestEventId", event.getEventId())).build());
         } catch (UnauthorizedActionException exception) {
             var owner = lockService.find(sessionId, event.getElementType(), event.getElementId()).orElse(null);
             messaging.convertAndSend(topic(sessionId), lockEvent("lock:denied", event, owner,

@@ -78,6 +78,7 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
 
     public UmlDiagramEntity saveDiagram(String diagramId, String projectId, Map<String, Object> model,
                                         Integer expectedVersion) {
+        memberRepository.lockProject(projectId);
         requireText(diagramId, "diagramId");
         requireText(projectId, "projectId");
         if (model == null) throw new IllegalArgumentException("model es obligatorio");
@@ -112,7 +113,7 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
     @Override
     public UmlDiagramEntity saveDiagramFromRest(String diagramId, String projectId, Map<String,Object> model,
                                                int expectedVersion, String actor) {
-        requireAccess(projectId, actor, ProjectMemberRole.OWNER, ProjectMemberRole.EDITOR);
+        requireWriteAccess(projectId, actor);
         var previous = diagramRepository.findByProjectIdForUpdate(projectId)
                 .map(UmlDiagramEntity::getModel).orElse(Map.of());
         var planner=new com.arqnova.servicios.impl.UmlMutationPlanner();
@@ -146,10 +147,10 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
                                String type, Object before, Object after) {
         recordChanges(projectId,actor,name,at,type,before,after,Map.of("origin","REST"));
     }
-    @Override public void recordAiChanges(String projectId,Map<String,Object> before,Map<String,Object> after,String actor,String requestId,String provider){
+    @Override public void recordAiChanges(String projectId,Map<String,Object> before,Map<String,Object> after,String actor,String requestId,String provider,String instruction){
         requireAccess(projectId,actor,ProjectMemberRole.OWNER,ProjectMemberRole.EDITOR);
         String name=userRepository.findByUsernameIgnoreCase(actor).map(user->user.getFullName()).filter(value->value!=null&&!value.isBlank()).orElse(actor);
-        var at=LocalDateTime.now();var metadata=Map.<String,Object>of("origin","AI","executor","AI","requestId",requestId,"provider",provider==null?"UNKNOWN":provider);
+        var at=LocalDateTime.now();var metadata=Map.<String,Object>of("origin","AI","executor","AI","requestId",requestId,"provider",provider==null?"UNKNOWN":provider,"instruction",instruction);
         recordChanges(projectId,actor,name,at,"class",before.get("classes"),after.get("classes"),metadata);
         recordChanges(projectId,actor,name,at,"relation",before.get("relations"),after.get("relations"),metadata);
         var b=indexElements(before.get("classes"));var a=indexElements(after.get("classes"));var ids=new LinkedHashSet<>(b.keySet());ids.addAll(a.keySet());
@@ -204,6 +205,7 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
         requireText(projectId, "projectId");
         requireText(userId, "userId");
         if (role == null) throw new IllegalArgumentException("memberRole es obligatorio");
+        memberRepository.lockProject(projectId);
         if (!projectRepository.existsById(projectId)) {
             throw new IllegalArgumentException("El proyecto indicado no existe");
         }
@@ -221,6 +223,7 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
     }
 
     public ProjectMemberEntity acceptInvitation(String projectId, String userId, ProjectMemberRole invitedRole) {
+        memberRepository.lockProject(projectId);
         ProjectMemberId id = new ProjectMemberId(projectId, userId);
         return memberRepository.findById(id)
                 .map(existing -> {
@@ -249,6 +252,17 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
         List<String> projectIds = memberRepository.findByIdUserId(userId).stream()
                 .map(member -> member.getId().getProjectId()).toList();
         return projectIds.isEmpty() ? List.of() : projectRepository.findByIdInOrderByUpdatedAtDesc(projectIds);
+    }
+
+    /** SQL order: project, membership, diagram. Keep authorization locks until the caller commits. */
+    @Override public ProjectMemberRole requireWriteAccess(String projectId,String userId) {
+        memberRepository.lockProject(projectId);
+        if(isAdministrator(userId))return ProjectMemberRole.OWNER;
+        var role=memberRepository.lockRole(projectId,userId).map(ProjectMemberRole::valueOf)
+                .orElseThrow(()->new UnauthorizedActionException("No tienes acceso a este proyecto"));
+        if(role!=ProjectMemberRole.OWNER&&role!=ProjectMemberRole.EDITOR)
+            throw new UnauthorizedActionException("Tu membresía no permite realizar esta operación");
+        return role;
     }
 
     public ProjectMemberRole requireAccess(String projectId, String userId, ProjectMemberRole... allowed) {

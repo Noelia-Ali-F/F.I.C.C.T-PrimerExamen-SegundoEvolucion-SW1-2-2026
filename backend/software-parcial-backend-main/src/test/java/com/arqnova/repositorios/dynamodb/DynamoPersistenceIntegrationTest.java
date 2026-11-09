@@ -177,14 +177,14 @@ class DynamoPersistenceIntegrationTest {
     @Test void storesCollaborationEventAndCanonicalModelAtomically() {
         String p = project(); projects.saveDiagram(id(), p, model(), 0); var s = session(p);
         var event = UmlCollaborationEvent.builder().eventId(id()).sessionId(s.getId()).projectId(p).userId("owner").userName("Owner")
-                .type("class:create").operation("Crear").elementId("b").elementType("class")
+                .type("class:create").baseVersion(1).operation("Crear").elementId("b").elementType("class")
                 .data(Map.of("element", Map.of("id", "b", "name", "Reserva", "attributes", List.of()))).build();
         collaboration.apply(event);
         assertThat(diagrams.findByProjectId(p).orElseThrow().getModel().get("classes").toString()).contains("Reserva");
         assertThat(activities.existsById(event.getEventId())).isTrue();
         assertThat(collaboration.activities(s.getId(), "owner")).hasSize(1);
     }
-    @Test void simultaneousWebSocketEditsKeepEveryClassAndActivity() throws Exception {
+    @Test void simultaneousWebSocketEditsOnSameVersionAcceptOnlyOne() throws Exception {
         String p = project(); projects.saveDiagram(id(), p, model(), 0); var s = session(p);
         var pool = Executors.newFixedThreadPool(4);
         try {
@@ -192,17 +192,18 @@ class DynamoPersistenceIntegrationTest {
             for (int index = 0; index < 12; index++) {
                 String element = "concurrent-" + index;
                 edits.add(() -> {
-                    collaboration.apply(UmlCollaborationEvent.builder().eventId(id()).sessionId(s.getId()).projectId(p)
+                    try { collaboration.apply(UmlCollaborationEvent.builder().baseVersion(1).eventId(id()).sessionId(s.getId()).projectId(p)
                             .userId("owner").userName("Owner").type("class:create").operation("Crear").elementId(element).elementType("class")
                             .data(Map.of("element", Map.of("id", element, "name", element, "attributes", List.of()))).build());
+                    } catch (com.arqnova.modelo.excepciones.DuplicateResourceException conflict) { /* stale writes are rejected */ }
                     return null;
                 });
             }
             for (var result : pool.invokeAll(edits)) result.get(30, TimeUnit.SECONDS);
             var saved = diagrams.findByProjectId(p).orElseThrow();
-            assertThat((List<?>) saved.getModel().get("classes")).hasSize(13);
-            assertThat(saved.getModelVersion()).isEqualTo(13);
-            assertThat(collaboration.activities(s.getId(), "owner")).hasSize(12);
+            assertThat((List<?>) saved.getModel().get("classes")).hasSize(2);
+            assertThat(saved.getModelVersion()).isEqualTo(2);
+            assertThat(collaboration.activities(s.getId(), "owner")).hasSize(1);
         } finally { pool.shutdownNow(); }
     }
 }

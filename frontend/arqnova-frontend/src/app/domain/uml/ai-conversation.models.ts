@@ -4,7 +4,7 @@ export interface AiFinding { severity: 'INFO' | 'WARNING' | 'ERROR'; elementId: 
 export interface AiTurn {
   requestId: string; projectId: string; authorId: string; authorName: string;
   mode: AiConversationMode; instruction: string; state: AiTurnState;
-  answer: { text: string; findings: AiFinding[]; provider: string; model: string } | null;
+  answer: { text: string; findings: AiFinding[]; provider: string; model: string; operations?: readonly unknown[] } | null;
   errorCode: string | null; diagramVersion: number; createdAt: string; updatedAt: string;
 }
 export interface AiConversationPage { turns: AiTurn[]; nextCursor: string | null; }

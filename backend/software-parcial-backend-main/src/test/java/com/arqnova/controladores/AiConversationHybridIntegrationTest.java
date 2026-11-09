@@ -104,6 +104,52 @@ class AiConversationHybridIntegrationTest {
     Turn modelTurn(String id){var now=Instant.now();return new Turn(id,project,username,username,Mode.MODEL,"Crea Cliente",State.PENDING,null,null,1,now,now);}
     Context modelContext(int version){return new Context(project,project,username,projects.findDiagramByProjectId(project).orElseThrow().getModel(),version,List.of(),List.of());}
     Answer createAnswer(){return new Answer("Clase creada",List.of(),"FAKE","test",List.of(UmlAiOperationResponse.builder().type("CLASS_CREATE").parameters(Map.of("id","cliente","name","Cliente")).build()));}
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired com.arqnova.servicios.puertos.entrada.CollaborationUseCase collaboration;
+
+    @Test void committedMembershipRevocationWinsBeforeModelWrite() throws Exception {
+        var turn=modelTurn("revoked-in-flight");
+        var snapshot=modelContext(1);
+        var pool=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var future=new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status->{
+                jdbc.update("UPDATE project_members SET member_role='VIEWER' WHERE project_id=? AND user_id=?",project,username);
+                var waiting=pool.submit(()->mutations.apply(turn,snapshot,createAnswer()));
+                assertThatThrownBy(()->waiting.get(200,java.util.concurrent.TimeUnit.MILLISECONDS))
+                        .isInstanceOf(java.util.concurrent.TimeoutException.class);
+                return waiting;
+            });
+            assertThatThrownBy(()->future.get(10,java.util.concurrent.TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(com.arqnova.modelo.excepciones.UnauthorizedActionException.class);
+            assertThat(mutations.find(turn)).isEmpty();
+            assertThat(activityData.projectHistory(project,null,null,20)).isEmpty();
+            assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(1);
+        } finally {pool.shutdownNow();}
+    }
+
+    @Test void websocketStaleMoveCannotRemoveCommittedAiMember() {
+        var turn=modelTurn("cu7-websocket-ai");
+        mutations.apply(turn,modelContext(1),createAnswer());
+        var request=new com.arqnova.modelo.dto.request.CreateUmlSessionRequest();
+        request.setProjectId(project);request.setProjectName(project);request.setModel(Map.of());
+        var session=collaboration.start(request,username);
+        var diagram=projects.findDiagramByProjectId(project).orElseThrow();
+        var clazz=(Map<?,?>)((List<?>)diagram.getModel().get("classes")).get(0);
+        String id=(String)clazz.get("id");
+        var move=com.arqnova.modelo.dto.request.UmlCollaborationEvent.builder().type("class:move")
+                .projectId(project).sessionId(session.getSessionId()).userId(username).elementId(id)
+                .baseVersion(1).data(Map.of("element",Map.of("id",id,"name","Nombre obsoleto","x",400,"y",420))).build();
+        assertThatThrownBy(()->collaboration.apply(move)).isInstanceOf(DuplicateResourceException.class);
+        assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(2);
+        move.setBaseVersion(2);
+        collaboration.apply(move);
+        var saved=projects.findDiagramByProjectId(project).orElseThrow();
+        var moved=(Map<?,?>)((List<?>)saved.getModel().get("classes")).get(0);
+        assertThat(moved.get("name")).isEqualTo(clazz.get("name"));
+        assertThat(moved.get("x")).isEqualTo(400);
+        assertThat(saved.getModelVersion()).isEqualTo(3);
+    }
+
     @Test void modelRequestCommitsOnceAndKeepsReceiptBesideDiagram()throws Exception{
         when(provider.answer(any(),any())).thenReturn(createAnswer());
         String body="{\"requestId\":\"model-001\",\"mode\":\"MODEL\",\"instruction\":\"Crea Cliente\"}";

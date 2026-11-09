@@ -29,7 +29,8 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
     private final UmlDiagramDataPort diagrams;
     private final UmlCollaborationActivityDataPort activities;
     private final com.arqnova.servicios.puertos.entrada.ProjectPushUseCase push;
-    public UmlCollaborationService(com.arqnova.servicios.puertos.salida.GraphDataPort graph,CollaborationSessionStore sessions,ProjectUseCase projects,com.arqnova.servicios.puertos.salida.UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities){this(graph,sessions,projects,diagrams,activities,null);}
+    private final com.arqnova.servicios.puertos.entrada.ElementLockUseCase locks;
+    public UmlCollaborationService(com.arqnova.servicios.puertos.salida.GraphDataPort graph,CollaborationSessionStore sessions,ProjectUseCase projects,com.arqnova.servicios.puertos.salida.UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities){this(graph,sessions,projects,diagrams,activities,null,null);}
 
     public UmlSessionResponse start(CreateUmlSessionRequest request, String username) {
         projects.requireAccess(request.getProjectId(), username, ProjectMemberRole.OWNER);
@@ -73,26 +74,54 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
         if (event.getType() == null || event.getType().startsWith("participant:") || event.getType().startsWith("session:")) return;
         UmlCollaborationSession session = requireSession(event.getSessionId(), event.getProjectId());
         // Read the canonical model under the same row lock used by server-side AI batches.
+        projects.requireWriteAccess(event.getProjectId(), event.getUserId());
         var diagram = diagrams.findByProjectIdForUpdate(session.getProjectId())
                 .orElseThrow(() -> new IllegalArgumentException("El proyecto no tiene un diagrama UML canónico"));
+        if (event.getBaseVersion() == null)
+            throw new com.arqnova.modelo.excepciones.DuplicateResourceException("La edición en vivo requiere versión base. Usa Guardar proyecto o actualiza el cliente.");
+        if (event.getBaseVersion() != diagram.getModelVersion())
+            throw new com.arqnova.modelo.excepciones.DuplicateResourceException("El diagrama cambió. Actualiza tu copia antes de editar.");
+        if (event.getEventId() != null && activities.existsById(event.getEventId()))
+            throw new com.arqnova.modelo.excepciones.DuplicateResourceException("El identificador del evento ya se utilizó.");
         Map<String, Object> model = deepCopy(diagram.getModel());
         List<Map<String, Object>> classes = (List<Map<String, Object>>) model.computeIfAbsent("classes", key -> new ArrayList<>());
         List<Map<String, Object>> relations = (List<Map<String, Object>>) model.computeIfAbsent("relations", key -> new ArrayList<>());
         Map<String, Object> element = event.getData() == null ? null : (Map<String, Object>) event.getData().get("element");
 
+        String id = event.getElementId();
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("Se requiere el identificador UML");
         switch (event.getType()) {
-            case "class:create" -> upsert(classes, element);
-            case "class:update", "class:move" -> upsert(classes, element);
+            case "class:create" -> create(classes, id, element);
+            case "class:update" -> patch(findClass(classes, id), id, element,
+                    "name", "description", "responsibilities", "stereotype", "color");
+            case "class:move" -> {
+                if (element == null || !(element.get("x") instanceof Number x) || !(element.get("y") instanceof Number y)
+                        || !Double.isFinite(x.doubleValue()) || !Double.isFinite(y.doubleValue()))
+                    throw new IllegalArgumentException("Coordenadas UML inválidas");
+                patch(findClass(classes, id), id, element, "x", "y");
+            }
             case "attribute:create" -> createAttribute(classes, event);
             case "attribute:update" -> updateAttribute(classes, event);
             case "attribute:delete" -> deleteAttribute(classes, event);
-            case "class:delete" -> {
-                classes.removeIf(item -> event.getElementId().equals(item.get("id")));
-                relations.removeIf(item -> event.getElementId().equals(item.get("sourceId")) || event.getElementId().equals(item.get("targetId")));
+            case "relation:create" -> create(relations, id, element);
+            case "relation:update" -> patch(findClass(relations, id), id, element,
+                    "sourceId", "targetId", "type", "label", "sourceMultiplicity", "targetMultiplicity", "associationClassId");
+            case "class:delete", "relation:delete" -> {
+                var operation = com.arqnova.modelo.dto.response.UmlAiOperationResponse.builder()
+                        .type(event.getType().equals("class:delete") ? "CLASS_DELETE" : "RELATION_DELETE")
+                        .targetId(id).parameters(Map.of()).build();
+                model = new com.arqnova.servicios.impl.UmlMutationPlanner().plan(model, List.of(operation), "ws-delete").model();
             }
-            case "relation:create", "relation:update" -> upsert(relations, element);
-            case "relation:delete" -> relations.removeIf(item -> event.getElementId().equals(item.get("id")));
             default -> throw new IllegalArgumentException("Evento UML no soportado: " + event.getType());
+        }
+        var planner = new com.arqnova.servicios.impl.UmlMutationPlanner();
+        planner.validate(model);
+        if (locks != null) {
+            for (var affected : planner.affected(diagram.getModel(), model))
+                locks.find(session.getId(), affected.type(), affected.id()).ifPresent(lock -> {
+                    if (!java.util.Objects.equals(event.getUserId(), lock.userId()))
+                        throw new com.arqnova.modelo.excepciones.DuplicateResourceException("Hay un elemento afectado en edición por otro usuario.");
+                });
         }
         model.put("updatedAt", LocalDateTime.now().toString());
         session.setModel(model); // snapshot transitorio; el modelo canónico permanece en uml_diagrams
@@ -100,6 +129,7 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
         diagram.setModel(model);
         diagram.setModelVersion(diagram.getModelVersion() + 1);
         diagrams.save(diagram);
+        event.setModelVersion(diagram.getModelVersion());
         store.save(session);
         recordActivity(event);
     }
@@ -107,11 +137,13 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
     public void recordActivity(UmlCollaborationEvent event) {
         if (!isTraceable(event) || activities.existsById(event.getEventId())) return;
         long timestamp = event.getTimestamp() == null ? System.currentTimeMillis() : event.getTimestamp();
+        var data = event.getData() == null ? new LinkedHashMap<String,Object>() : new LinkedHashMap<>(event.getData());
+        List.of("origin", "executor", "provider", "requestId", "instruction").forEach(data::remove);
         activities.save(UmlCollaborationActivityEntity.builder()
                 .eventId(event.getEventId()).sessionId(event.getSessionId()).projectId(event.getProjectId())
                 .userId(event.getUserId()).userName(event.getUserName()).eventType(event.getType())
                 .elementId(event.getElementId()).elementType(event.getElementType()).operation(event.getOperation())
-                .eventData(event.getData()).occurredAt(LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault()))
+                .eventData(data).occurredAt(LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault()))
                 .build());
         if(push!=null&&!event.getType().startsWith("session:")&&!event.getType().endsWith(":move"))
             push.notifyChange(new com.arqnova.modelo.ia.ProjectPush.Event("human-"+event.getEventId(),event.getProjectId(),"ArqNova: cambios en el proyecto",event.getUserName()+" "+event.getOperation()));
@@ -166,7 +198,7 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
         if (attribute == null || attribute.get("id") == null || !attributeId.equals(String.valueOf(attribute.get("id"))))
             throw new IllegalArgumentException("El atributo actualizado no coincide con attributeId");
         int index = attributeIndex(attributes, attributeId);
-        attributes.set(index, new LinkedHashMap<>(attribute));
+        patch(attributes.get(index), attributeId, attribute, "name", "type", "isPrimaryKey");
     }
 
     private void deleteAttribute(List<Map<String, Object>> classes, UmlCollaborationEvent event) {
@@ -204,11 +236,18 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
         throw new IllegalArgumentException("El atributo indicado no existe en la clase");
     }
 
-    private void upsert(List<Map<String, Object>> target, Map<String, Object> element) {
-        if (element == null || element.get("id") == null) throw new IllegalArgumentException("El evento no contiene un elemento válido");
-        String id = String.valueOf(element.get("id"));
-        target.removeIf(item -> id.equals(String.valueOf(item.get("id"))));
+    private void create(List<Map<String, Object>> target, String id, Map<String, Object> element) {
+        if (element == null || !id.equals(element.get("id")) || target.stream().anyMatch(item -> id.equals(item.get("id"))))
+            throw new IllegalArgumentException("Identificador UML inválido o duplicado");
         target.add(new LinkedHashMap<>(element));
+    }
+
+    private void patch(Map<String, Object> target, String id, Map<String, Object> fields, String... allowed) {
+        if (fields == null || (fields.containsKey("id") && !id.equals(fields.get("id"))))
+            throw new IllegalArgumentException("El identificador del cambio no coincide");
+        for (String field : allowed) {
+            if (fields.containsKey(field)) target.put(field, fields.get(field));
+        }
     }
 
     private UmlSessionResponse response(UmlCollaborationSession session, ProjectMemberRole memberRole) {

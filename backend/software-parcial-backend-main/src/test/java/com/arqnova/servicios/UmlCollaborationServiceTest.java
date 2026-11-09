@@ -99,7 +99,7 @@ class UmlCollaborationServiceTest {
     void appliesGranularClassMoveAndPersistsIt() {
         CollaborationSessionStore repository = mock(CollaborationSessionStore.class);
         Map<String, Object> original = new LinkedHashMap<>();
-        original.put("classes", new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("id", "book", "name", "Book", "x", 10, "y", 20)))));
+        original.put("classes", new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("id", "book", "name", "Book", "x", 10, "y", 20, "attributes", List.of(Map.of("id", "ia", "name", "MarcaIA")))))));
         original.put("relations", new ArrayList<>());
         UmlCollaborationSession session = UmlCollaborationSession.builder().id("s1").projectId("p1").active(true).model(original).build();
         when(repository.findById("s1")).thenReturn(Optional.of(session));
@@ -108,10 +108,15 @@ class UmlCollaborationServiceTest {
         Map<String, Object> moved = new LinkedHashMap<>(Map.of("id", "book", "name", "Book", "x", 230, "y", 140));
 
         service.apply(UmlCollaborationEvent.builder().type("class:move").sessionId("s1").projectId("p1")
-                .elementId("book").data(Map.of("element", moved)).build());
+                .baseVersion(1).elementId("book").data(Map.of("element", moved)).build());
 
         List<Map<String, Object>> classes = (List<Map<String, Object>>) session.getModel().get("classes");
         assertEquals(230, classes.get(0).get("x"));
+        assertEquals(List.of(Map.of("id", "ia", "name", "MarcaIA")), classes.get(0).get("attributes"));
+        var stale = event("class:update", "book", Map.of("name", "Old snapshot"));
+        org.junit.jupiter.api.Assertions.assertThrows(com.arqnova.modelo.excepciones.DuplicateResourceException.class, () -> service.apply(stale));
+        stale.setBaseVersion(null);
+        org.junit.jupiter.api.Assertions.assertThrows(com.arqnova.modelo.excepciones.DuplicateResourceException.class, () -> service.apply(stale));
         assertTrue(session.getUpdatedAt() != null);
         verify(repository).save(session);
     }
@@ -137,11 +142,11 @@ class UmlCollaborationServiceTest {
         assertEquals(1, relations.size());
 
         relation.put("label", "consulta");
-        service.apply(event("relation:update", "r1", relation));
+        var update = event("relation:update", "r1", relation); update.setBaseVersion(2); service.apply(update);
         relations = (List<Map<String, Object>>) session.getModel().get("relations");
         assertEquals("consulta", relations.get(0).get("label"));
 
-        service.apply(event("relation:delete", "r1", null));
+        var deletion = event("relation:delete", "r1", null); deletion.setBaseVersion(3); service.apply(deletion);
         relations = (List<Map<String, Object>>) session.getModel().get("relations");
         assertTrue(relations.isEmpty());
     }
@@ -183,8 +188,8 @@ class UmlCollaborationServiceTest {
             UmlCollaborationEvent emailUpdate = attributeEvent("attribute:update", "user", "attr-email",
                     Map.of("id", "attr-email", "name", "correo", "type", "Email", "isPrimaryKey", false));
 
-            if (reverse) { service.apply(emailUpdate); service.apply(idUpdate); }
-            else { service.apply(idUpdate); service.apply(emailUpdate); }
+            if (reverse) { service.apply(emailUpdate); idUpdate.setBaseVersion(2); service.apply(idUpdate); }
+            else { service.apply(idUpdate); emailUpdate.setBaseVersion(2); service.apply(emailUpdate); }
 
             List<Map<String, Object>> classes = (List<Map<String, Object>>) session.getModel().get("classes");
             List<Map<String, Object>> attributes = (List<Map<String, Object>>) classes.get(0).get("attributes");
@@ -205,7 +210,7 @@ class UmlCollaborationServiceTest {
 
         service.apply(attributeEvent("attribute:create", "user", "attr-phone",
                 Map.of("id", "attr-phone", "name", "telefono", "type", "String", "isPrimaryKey", false)));
-        service.apply(attributeEvent("attribute:delete", "user", "attr-id", null));
+        var deletion = attributeEvent("attribute:delete", "user", "attr-id", null); deletion.setBaseVersion(2); service.apply(deletion);
 
         List<Map<String, Object>> classes = (List<Map<String, Object>>) session.getModel().get("classes");
         List<Map<String, Object>> attributes = (List<Map<String, Object>>) classes.get(0).get("attributes");
@@ -243,13 +248,13 @@ class UmlCollaborationServiceTest {
         data.put("classId", classId);
         data.put("attributeId", attributeId);
         if (attribute != null) data.put("attribute", attribute);
-        return UmlCollaborationEvent.builder().type(type).sessionId("s1").projectId("p1")
+        return UmlCollaborationEvent.builder().type(type).sessionId("s1").projectId("p1").baseVersion(1)
                 .elementType("attribute").elementId(attributeId).data(data).build();
     }
 
     private UmlCollaborationEvent event(String type, String elementId, Map<String, Object> element) {
         Map<String, Object> data = element == null ? Map.of() : Map.of("element", element);
-        return UmlCollaborationEvent.builder().type(type).sessionId("s1").projectId("p1")
+        return UmlCollaborationEvent.builder().type(type).sessionId("s1").projectId("p1").baseVersion(1)
                 .elementId(elementId).data(data).build();
     }
 }

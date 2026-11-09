@@ -27,7 +27,8 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
               <div class="answer"><strong>Asistente IA</strong><p>{{answer.text}}</p>
                 @for(finding of answer.findings;track $index){<div class="finding" [class.warning]="finding.severity!=='INFO'"><strong>{{finding.severity==='ERROR'?'Error':finding.severity==='WARNING'?'Observación':'Información'}}</strong><p>{{finding.message}}</p></div>}
                 @if(turn.mode!=='MODEL'){<small>Sin cambios en el lienzo · versión {{turn.diagramVersion}}</small>}
-                @else{<small>Diagrama guardado · versión {{turn.diagramVersion}}</small>}
+                @else if(answer.operations?.length){<small>Diagrama guardado · versión {{turn.diagramVersion}}</small>}
+                @else{<small>Solicitud procesada · sin cambios en el UML</small>}
                 @if(answer.model==='modeling-mode-required' && modelingEnabled()){
                   <button type="button" [disabled]="sending() || !!instruction.trim()" (click)="prepareModeling(turn.instruction)">Preparar cambio UML</button>
                 }
@@ -89,7 +90,7 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
     this.persistUnconfirmed();
     this.turns.update(turns => mergeAiTurns(turns, incoming));
     const version = incoming.reduce((latest, turn) =>
-      turn.mode === 'MODEL' && turn.state === 'COMPLETED' ? Math.max(latest, turn.diagramVersion) : latest, 0);
+      turn.mode === 'MODEL' && turn.state === 'COMPLETED' && turn.answer?.operations?.length ? Math.max(latest, turn.diagramVersion) : latest, 0);
     if (version > 0) this.modelCompleted.emit(version);
   }
   private loadTurn(id:string){if(this.loadingTurns.has(id))return;this.loadingTurns.add(id);this.subscriptions.add(this.service.get(this.projectId,id).subscribe({next:turn=>{

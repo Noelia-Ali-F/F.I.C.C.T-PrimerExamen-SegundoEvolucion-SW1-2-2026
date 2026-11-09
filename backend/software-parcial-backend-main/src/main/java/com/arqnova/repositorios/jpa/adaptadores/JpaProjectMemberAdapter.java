@@ -18,6 +18,8 @@ public class JpaProjectMemberAdapter implements ProjectMemberDataPort {
  public long count(){return repository.count();}
  public void deleteAll(){repository.deleteAll();}
  public void flush(){repository.flush();}
+ public void lockProject(String projectId){repository.lockProject(projectId);}
+ public Optional<String> lockRole(String projectId,String userId){return repository.lockRole(projectId,userId);}
  public long countByIdProjectId(String projectId){return repository.countByIdProjectId(projectId);}
  public Optional<ProjectMemberEntity> findByIdProjectIdAndIdUserId(String projectId,String userId){return repository.findByIdProjectIdAndIdUserId(projectId,userId).map(this::domain);}
  public List<ProjectMemberEntity> findByIdUserId(String userId){return repository.findByIdUserId(userId).stream().map(this::domain).toList();}

@@ -21,6 +21,11 @@ public final class ProjectActivityService implements ProjectActivityUseCase {
         }catch(RuntimeException e){throw new IllegalArgumentException("Cursor de actividad inválido");}
         var rows=activities.projectHistory(project,before,beforeId,limit+1);var visible=rows.stream().limit(limit).toList();
         String next=null;if(rows.size()>limit){var last=visible.get(visible.size()-1);next=Base64.getUrlEncoder().withoutPadding().encodeToString((last.getOccurredAt()+"|"+last.getEventId()).getBytes(StandardCharsets.UTF_8));}
-        return new Page(visible.stream().map(v->new ProjectActivity(v.getEventId(),v.getUserName(),v.getEventType(),v.getOperation(),v.getOccurredAt().atZone(zone).toInstant().toEpochMilli())).toList(),next);
+        return new Page(visible.stream().map(v->new ProjectActivity(v.getEventId(),v.getUserName(),v.getEventType(),v.getOperation(),v.getOccurredAt().atZone(zone).toInstant().toEpochMilli(),
+                v.getUserId(), metadata(v,"executor"),metadata(v,"provider"),metadata(v,"requestId"),metadata(v,"instruction"))).toList(),next);
+    }
+    private String metadata(com.arqnova.modelo.entidades.UmlCollaborationActivityEntity event,String key) {
+        var data=event.getEventData();
+        return data!=null&&"AI".equals(data.get("origin"))&&data.get(key) instanceof String value?value:null;
     }
 }

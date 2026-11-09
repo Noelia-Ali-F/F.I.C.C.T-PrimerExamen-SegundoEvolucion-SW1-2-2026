@@ -25,12 +25,12 @@ public class HexagonalConfiguration {
  @Bean com.arqnova.servicios.puertos.entrada.UmlImageAnalysisUseCase umlImageAnalysis(UmlInterpretationPort ai){return new UmlImageAnalysisService(ai);}
  @Bean UmlBackendGeneratorService umlBackendGeneratorService(BackendGenerationPort output){return new UmlBackendGeneratorServiceImpl(output);}
  @Bean UmlFlutterGeneratorService umlFlutterGeneratorService(FlutterGenerationPort output){return new UmlFlutterGeneratorServiceImpl(output);}
- @Bean UmlCollaborationService umlCollaborationService(GraphDataPort graph,CollaborationSessionStore sessions,UmlProjectPersistenceService projects,UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions,Environment environment,com.arqnova.servicios.puertos.entrada.ProjectPushUseCase push){
+ @Bean UmlCollaborationService umlCollaborationService(GraphDataPort graph,CollaborationSessionStore sessions,UmlProjectPersistenceService projects,UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions,Environment environment,com.arqnova.servicios.puertos.entrada.ProjectPushUseCase push,UmlElementLockService locks){
   Properties policies=new Properties();
   policies.setProperty("apply","PROPAGATION_REQUIRED");
   policies.setProperty("recordActivity","PROPAGATION_REQUIRED");
   policies.setProperty("activities","PROPAGATION_REQUIRED,readOnly");
-  UmlCollaborationService service=transactional(new UmlCollaborationService(graph,sessions,projects,diagrams,activities,push),transactions,policies);
+  UmlCollaborationService service=transactional(new UmlCollaborationService(graph,sessions,projects,diagrams,activities,push,locks),transactions,policies);
   if(!environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dynamodb")))return service;
   // Keep the existing in-process collaboration serialization through the commit itself.
   // Otherwise the next WebSocket event can read an old revision after apply returns but before commit.

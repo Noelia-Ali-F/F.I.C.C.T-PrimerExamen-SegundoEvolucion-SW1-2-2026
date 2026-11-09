@@ -110,7 +110,7 @@ export class UmlProjectUseCases {
     );
   }
 
-  saveModel(id: string, model: UmlDiagramModel): Observable<UmlProject> {
+  saveModel(id: string, model: UmlDiagramModel, baseVersion?: number): Observable<UmlProject> {
     const cached = this.cached(id);
     if (!cached)
       return throwError(() => new Error('El proyecto no está disponible en la caché local.'));
@@ -123,7 +123,7 @@ export class UmlProjectUseCases {
     return this.saveDiagram(
       { ...cached, owner: cached.owner ?? '', memberRole: cached.memberRole ?? 'OWNER' },
       model,
-      cached.modelVersion ?? 0,
+      baseVersion ?? cached.modelVersion ?? 0,
     ).pipe(tap((project) => this.putCache(project)));
   }
 

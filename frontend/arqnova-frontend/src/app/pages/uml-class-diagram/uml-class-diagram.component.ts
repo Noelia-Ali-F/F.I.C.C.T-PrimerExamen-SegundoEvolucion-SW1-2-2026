@@ -561,7 +561,6 @@ export class UmlClassDiagramComponent implements OnDestroy {
     },15_000);
     if(this.teamAiWatching)return;this.teamAiWatching=true;
     this.teamAiSubscriptions.add(this.teamAi.status(this.projectId).subscribe({next:status=>{
-      if(!status.enabled){this.teamAiWatching=false;return;}
       this.teamAiSubscriptions.add(this.teamAi.watch(this.projectId).subscribe(change=>{
         if(change.projectId!==this.projectId)return;
         if(change.state==='CONNECTED')this.refreshCanonicalModel();
@@ -645,7 +644,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.saveInFlight = true;
     this.status.set('Guardando en PostgreSQL...');
     const submitted = this.model();
-    this.projectStore.saveModel(this.projectId, submitted).subscribe({
+    this.projectStore.saveModel(this.projectId, submitted, this.canonicalModelVersion).subscribe({
       next: project => {
         this.canonicalModelVersion = project.modelVersion ?? 0;
         this.canonicalModel = submitted;
@@ -687,21 +686,33 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.activateSession(session);
   },error:()=>{this.showNotice('error','La invitación no existe o ya no está activa.');this.router.navigate(['/proyectos']);}});}
   private activateSession(session:UmlSession){this.watchTeamModeling();this.collaborativeSession.set(session);this.status.set('Sesión colaborativa activa');this.activity.set([]);this.collaboration.activities(session.sessionId).subscribe({next:history=>this.activity.update(live=>{const ids=new Set(live.map(item=>item.eventId));return [...live,...history.filter(item=>!ids.has(item.eventId))].sort((a,b)=>(b.timestamp??0)-(a.timestamp??0)).slice(0,100);}),error:()=>{}});this.collaboration.connect(session,event=>this.handleLiveEvent(event));}
-  private broadcast(type:string,elementId:string,element:unknown,operation:string,elementType?:UmlLockElementType){const session=this.collaborativeSession();if(!session)return;this.collaboration.publish({type,projectId:this.projectId,elementId,elementType:elementType??(type.startsWith('relation:')?'relation':'class'),operation,data:{element}});}
-  private broadcastAttribute(type:'attribute:create'|'attribute:update'|'attribute:delete',classId:string,attributeId:string,attribute?:UmlAttribute){if(!this.collaborativeSession())return;this.collaboration.publish({type,projectId:this.projectId,elementId:attributeId,elementType:'attribute',operation:type==='attribute:create'?'creó un atributo':type==='attribute:delete'?'eliminó un atributo':'actualizó un atributo',data:{classId,attributeId,...(attribute?{attribute}:{})}});}
+  // REST commits the versioned model. The collaboration socket only announces editing presence.
+  private broadcast(_type:string,elementId:string,_element:unknown,operation:string,_elementType?:UmlLockElementType) {
+    this.announceAction(elementId,operation,operation);
+  }
+  private broadcastAttribute(type:'attribute:create'|'attribute:update'|'attribute:delete',classId:string,_attributeId:string,_attribute?:UmlAttribute) {
+    this.announceAction(classId,'Editando atributos',type);
+  }
   private announceAction(elementId:string,operation:string,action:string){const session=this.collaborativeSession();if(!session)return;this.collaboration.publish({type:'participant:editing',projectId:this.projectId,elementId,operation,data:{element:{action}}});}
   private shareCursor(event:PointerEvent){if(!this.collaborativeSession())return;const now=Date.now();if(now-this.lastCursorSentAt<45)return;this.lastCursorSentAt=now;const rect=this.canvas.nativeElement.getBoundingClientRect();const x=Math.max(0,Math.min(this.canvasWidth,(event.clientX-rect.left)/this.zoom()));const y=Math.max(0,Math.min(this.canvasHeight,(event.clientY-rect.top)/this.zoom()));this.broadcastCursor(x,y,true);}
   private broadcastCursor(x:number,y:number,visible:boolean){const session=this.collaborativeSession();if(!session)return;this.collaboration.publish({type:'participant:cursor',projectId:this.projectId,operation:'moviendo el cursor',data:{element:{x,y,visible}}});}
   private cursorColor(userId:string){const colors=['#2563eb','#7c3aed','#db2777','#1e40af','#ea580c','#0891b2'];let hash=0;for(const char of userId)hash=(hash*31+char.charCodeAt(0))|0;return colors[Math.abs(hash)%colors.length];}
   private collaboratorName(userId:string,eventName?:string){return eventName?.trim()||this.participants().find(participant=>participant.userId===userId)?.userName?.trim()||userId;}
   private handleLiveEvent(event:UmlLiveEvent){
+    if(event.type==='diagram:conflict'){
+      if(event.data?.requesterId===this.currentUserId()){
+        this.showNotice('error',event.operation||'El diagrama cambió. Revisa la versión guardada.');
+        this.refreshCanonicalModel();
+      }
+      return;
+    }
     if(event.type.startsWith('lock:')){this.handleLockEvent(event);return;}
     if(event.data?.participants)this.participants.set(event.data.participants);
     const own=event.userId===this.auth.currentUser()?.username;
     if(!own&&event.type==='participant:cursor'&&event.userId){const cursor=(event.data?.element||{}) as any;if(cursor.visible===false)this.remoteCursors.update(value=>{const next={...value};delete next[event.userId!];return next;});else if(Number.isFinite(cursor.x)&&Number.isFinite(cursor.y))this.remoteCursors.update(value=>({...value,[event.userId!]:{userName:this.collaboratorName(event.userId!,event.userName),x:cursor.x,y:cursor.y,color:this.cursorColor(event.userId!)}}));}
     if(event.type==='session:leave'&&event.userId)this.remoteCursors.update(value=>{const next={...value};delete next[event.userId!];return next;});
     if(!own&&event.type==='participant:editing'&&event.elementId){const action=(event.data?.element as any)?.action||'editando';this.remoteActions.update(value=>({...value,[event.elementId!]:{userName:event.userName||'Usuario',action}}));window.setTimeout(()=>this.remoteActions.update(value=>{const next={...value};delete next[event.elementId!];return next;}),2500);}
-    if(!own)this.applyRemoteMutation(event);
+    if(!own&&/^(class|attribute|relation):/.test(event.type))this.refreshCanonicalModel();
     if(event.operation&&event.type!=='participant:cursor'&&!event.type.endsWith(':error'))this.activity.update(items=>[event,...items].slice(0,100));
     if(event.type==='session:error')this.showNotice('error',event.operation||'Error de colaboración');
   }
@@ -715,7 +726,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private lockKey(elementType:UmlLockElementType,elementId:string){return `${elementType}:${elementId}`;}
   private currentUserId(){return this.auth.currentUser()?.username??'';}
   activityTarget(event:UmlLiveEvent){const labels:Record<string,string>={class:'Clase',attribute:'Atributo',relation:'Relación'};const element=(event.data?.element||event.data?.attribute) as any;const name=element?.name||element?.label;return event.elementType?`${labels[event.elementType]||event.elementType}: ${name||event.elementId||'sin identificar'}`:'';}
-  private applyRemoteMutation(event:UmlLiveEvent){const element=(event.data?.element||null) as any;let classes=this.classes(),relations=this.relations();switch(event.type){case'class:create':case'class:update':case'class:move':if(element)classes=[...classes.filter(i=>i.id!==element.id),element];break;case'attribute:create':{const classId=event.data?.classId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.some(value=>value.id===attribute.id)?item.attributes:[...item.attributes,attribute]}:item);break;}case'attribute:update':{const classId=event.data?.classId,attributeId=event.data?.attributeId,attribute=event.data?.attribute as UmlAttribute|undefined;if(!classId||!attributeId||!attribute)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.map(value=>value.id===attributeId?attribute:value)}:item);break;}case'attribute:delete':{const classId=event.data?.classId,attributeId=event.data?.attributeId;if(!classId||!attributeId)return;classes=classes.map(item=>item.id===classId?{...item,attributes:item.attributes.filter(value=>value.id!==attributeId)}:item);break;}case'class:delete':{const linkedIds=relations.filter(r=>r.sourceId===event.elementId||r.targetId===event.elementId).map(r=>r.associationClassId).filter((value):value is string=>!!value);classes=classes.filter(i=>i.id!==event.elementId&&!linkedIds.includes(i.id));relations=relations.filter(r=>r.sourceId!==event.elementId&&r.targetId!==event.elementId).map(r=>r.associationClassId===event.elementId?{...r,associationClassId:undefined}:r);break;}case'relation:create':case'relation:update':if(element)relations=[...relations.filter(i=>i.id!==element.id),element];break;case'relation:delete':relations=relations.filter(i=>i.id!==event.elementId);break;default:return;}this.model.set({...this.model(),classes,relations,updatedAt:new Date().toISOString()});this.projectStore.upsertCollaborative(this.projectId,this.model().title,this.model());}
+
   private normalizeModel(value:any):UmlDiagramModel {return diagramRules.normalizeModel(value);}
   private parseLegacyAttribute(classId:string,value:string,index:number):UmlAttribute{return diagramRules.parseLegacyAttribute(classId,value,index);}
   private emptyAttribute():UmlAttribute{return{id:'',name:'',type:'String',isPrimaryKey:false};} private emptyMethod():UmlMethod{return{id:'',name:'',parameters:'',returnType:'void'};}

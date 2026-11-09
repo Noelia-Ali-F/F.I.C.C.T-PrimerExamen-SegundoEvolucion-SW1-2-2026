@@ -23,4 +23,6 @@ public class UmlCollaborationEvent {
     private String operation;
     private Map<String, Object> data;
     private Long timestamp;
+    private Integer baseVersion;
+    private Integer modelVersion;
 }

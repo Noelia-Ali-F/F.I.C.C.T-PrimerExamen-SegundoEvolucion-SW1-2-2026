@@ -739,20 +739,17 @@ describe('UmlClassDiagramComponent', () => {
     expect(hostCursor.style.top).toBe('90px');
   });
 
-  it('aplica create, update y delete de atributos sin reemplazar la clase completa', () => {
-    component.newClassName = 'Usuario'; component.addClass();
-    const classId = component.selectedClass()!.id;
-    component.attributeDraft = { id: 'attr-id', name: 'id', type: 'Long', isPrimaryKey: true }; component.saveAttribute();
-    component.attributeDraft = { id: 'attr-correo', name: 'correo', type: 'String', isPrimaryKey: false }; component.saveAttribute();
-    component.updateSelectedClass({ x: 321, description: 'Debe conservarse' });
-
-    (component as any).applyRemoteMutation({ type: 'attribute:update', projectId: 'project-test', elementId: 'attr-id', elementType: 'attribute', data: { classId, attributeId: 'attr-id', attribute: { id: 'attr-id', name: 'id', type: 'UUID', isPrimaryKey: true } } });
-    (component as any).applyRemoteMutation({ type: 'attribute:update', projectId: 'project-test', elementId: 'attr-correo', elementType: 'attribute', data: { classId, attributeId: 'attr-correo', attribute: { id: 'attr-correo', name: 'correo', type: 'Email', isPrimaryKey: false } } });
-    (component as any).applyRemoteMutation({ type: 'attribute:create', projectId: 'project-test', elementId: 'attr-name', elementType: 'attribute', data: { classId, attributeId: 'attr-name', attribute: { id: 'attr-name', name: 'nombre', type: 'String', isPrimaryKey: false } } });
-    (component as any).applyRemoteMutation({ type: 'attribute:delete', projectId: 'project-test', elementId: 'attr-name', elementType: 'attribute', data: { classId, attributeId: 'attr-name' } });
-
-    expect(component.selectedClass()?.attributes.map(item => [item.id, item.type])).toEqual([['attr-id', 'UUID'], ['attr-correo', 'Email']]);
-    expect(component.selectedClass()).toEqual(expect.objectContaining({ x: 321, description: 'Debe conservarse' }));
+  it('reconcilia un evento de edicion sin aplicar su snapshot obsoleto', () => {
+    component.newClassName = 'Usuario';
+    component.addClass();
+    const original = component.model();
+    const refresh = vi.spyOn(component as any, 'refreshCanonicalModel').mockImplementation(() => {});
+    (component as any).handleLiveEvent({
+      type: 'class:move', projectId: 'project-test', userId: 'otro',
+      data: { element: { id: component.selectedClass()!.id, name: 'Snapshot antiguo' } }
+    });
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(component.model()).toBe(original);
   });
 
   it('aplica operaciones IA puntuales y persiste sin regenerar el diagrama', () => {
