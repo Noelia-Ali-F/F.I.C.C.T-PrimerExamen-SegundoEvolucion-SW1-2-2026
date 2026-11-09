@@ -209,6 +209,14 @@ public final class AiConversationService implements AiConversationUseCase {
                 }return;
             }
             // Record the model version actually reviewed, which may have advanced while the job waited.
+            if(turn.mode()==Mode.REVIEW){
+                int currentVersion=projects.findDiagramByProjectId(turn.projectId()).map(v->v.getModelVersion()).orElse(context.diagramVersion());
+                if(currentVersion!=context.diagramVersion()){
+                    String warning="Revisión posiblemente obsoleta: se analizó la versión "+context.diagramVersion()+" y el diagrama ya está en la versión "+currentVersion+". Solicita otra revisión para evaluar los cambios posteriores.";
+                    var findings=new ArrayList<>(answer.findings());findings.add(new Finding("WARNING",null,warning));
+                    answer=new Answer(answer.text().substring(0,Math.min(11500,answer.text().length()))+"\n\n"+warning,findings,answer.provider(),answer.model());
+                }
+            }
             var reviewed=new Turn(turn.requestId(),turn.projectId(),turn.authorId(),turn.authorName(),turn.mode(),turn.instruction(),turn.state(),null,null,
                     context.diagramVersion(),turn.createdAt(),turn.updatedAt());
             finish(job,reviewed.finish(answer,clock.instant()));

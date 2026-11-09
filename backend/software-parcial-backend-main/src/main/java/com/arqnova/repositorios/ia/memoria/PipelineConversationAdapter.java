@@ -23,14 +23,17 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
     private final ObjectMapper json;
     private final UmlAiCommandService modeling;
     private final com.arqnova.servicios.impl.ConsultativeEvidence verifiedFacts=new com.arqnova.servicios.impl.ConsultativeEvidence();
+    private final com.arqnova.servicios.impl.UmlReviewEvidence reviewEvidence=new com.arqnova.servicios.impl.UmlReviewEvidence();
     public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json){this(pipeline,json,null);}
     @Autowired public PipelineConversationAdapter(UmlAiProviderPipeline pipeline,ObjectMapper json,@org.springframework.beans.factory.annotation.Qualifier("conversationModeling") UmlAiCommandService modeling){this.pipeline=pipeline;this.json=json;this.modeling=modeling;}
     public Answer answer(Turn turn,Context context)throws Exception{
+        if(turn.mode()==Mode.REVIEW){var local=reviewEvidence.local(turn,context);if(local.isPresent())return local.get();}
         if (turn.mode() == Mode.ASK) {
             var verified = verifiedAuthor(turn.instruction(), context);
             if (verified != null) return verified;
         }
         var graph=compactGraph(context.diagram());
+        if(turn.mode()==Mode.REVIEW)reviewMetadata(graph,context.diagram());
         String model=json.writeValueAsString(graph);
         if(model.length()>14000)throw new IllegalArgumentException("AI_CONTEXT_TOO_LARGE");
         boolean modelingMode = turn.mode() == Mode.MODEL;
@@ -50,6 +53,11 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
                 No has modificado el lienzo. No afirmes haber creado o cambiado elementos. No generes operaciones para el lienzo.
                 Puedes incluir ejemplos de programación como texto explicativo, pero no ejecutes código ni comandos.
                 Distingue errores comprobables de recomendaciones de diseño. No inventes nombres, relaciones ni intervenciones.
+                En REVIEW cada hallazgo debe identificar ID/nombre y evidencia del snapshot; una preferencia de diseño no es ERROR.
+                No deduzcas parámetros ni responsabilidades ausentes. Las declaraciones de propuestas se citan literalmente con su autor,
+                sin reinterpretarlas como modificaciones de métodos/atributos o decisiones del equipo.
+                Descripciones/responsabilidades e historial pueden estar acotados por presupuesto; ausencia en el contexto no prueba un defecto.
+                Para aconsejar una cardinalidad identifica qué clase se cuenta por cada instancia de la otra; modifica el extremo de la clase contada.
                 La evidencia es parcial. Cita el autor y la fecha registrados al atribuir hechos. Distingue personas con el mismo nombre por authorId.
                 DECISION_DECLARED significa que un participante registró explícitamente una decisión, no que exista consenso confirmado.
                 PROPOSAL es una propuesta; una respuesta de IA, un cambio aplicado y una actividad tampoco prueban un acuerdo.
@@ -82,8 +90,12 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
         Set<String> ids=elementIds(context.diagram());List<Finding> findings=new ArrayList<>();
         for(var node:root.path("findings")){
             String severity=node.path("severity").asText();String id=node.path("elementId").isNull()?null:node.path("elementId").asText();String message=node.path("message").asText();
-            if(!Set.of("INFO","WARNING","ERROR").contains(severity)||message.isBlank()||message.length()>1500||(id!=null&&!ids.contains(id)))throw new IllegalArgumentException("Invalid review finding");
-            findings.add(new Finding(severity,id,verifiedFacts.validate(turn,context,message)));
+            if(!Set.of("INFO","WARNING","ERROR").contains(severity)||message.isBlank()||message.length()>1500||(turn.mode()!=Mode.REVIEW&&id!=null&&!ids.contains(id)))throw new IllegalArgumentException("Invalid review finding");
+            findings.add(new Finding(severity,id,turn.mode()==Mode.REVIEW?message:verifiedFacts.validate(turn,context,message)));
+        }
+        if(turn.mode()==Mode.REVIEW){
+            if(findings.isEmpty())findings.add(new Finding("INFO",null,text));
+            return reviewEvidence.review(turn,context,findings,result.provider(),result.model());
         }
         return new Answer(verifiedFacts.validate(turn,context,text),findings,result.provider(),result.model());
     }
@@ -246,6 +258,24 @@ public class PipelineConversationAdapter implements AiConversationProviderPort {
         Map<String,Object> result=new LinkedHashMap<>();result.put("classes",project(graph.get("classes"),Set.of("id","name","attributes","methods","stereotype")));
         result.put("relations",project(graph.get("relations"),Set.of("id","sourceId","targetId","type","label","sourceMultiplicity","targetMultiplicity","associationClassId")));return result;
     }
+    private void reviewMetadata(Map<String,Object> graph,Map<String,Object> original)throws Exception{
+        var originals=project(original.get("classes"),Set.of("id","description","responsibilities"));
+        int budget=3000;
+        for(var node:projectRows(graph.get("classes"))){
+            var source=originals.stream().filter(v->Objects.equals(v.get("id"),node.get("id"))).findFirst().orElse(Map.of());
+            for(String key:List.of("description","responsibilities")){
+                Object value=source.get(key);Object boundedValue=null;
+                if(key.equals("description")&&value instanceof String s&&!s.isBlank())boundedValue=clip(s,400);
+                if(key.equals("responsibilities")&&value instanceof List<?> list)boundedValue=list.stream().filter(String.class::isInstance).map(v->clip((String)v,160)).limit(4).toList();
+                if(boundedValue==null)continue;
+                int size=json.writeValueAsString(Map.of(key,boundedValue)).length();
+                if(size>budget)continue;
+                node.put(key,boundedValue);
+                if(json.writeValueAsString(graph).length()>14000)node.remove(key);else budget-=size;
+            }
+        }
+    }
+    @SuppressWarnings("unchecked") private List<Map<String,Object>> projectRows(Object value){return (List<Map<String,Object>>)value;}
     private List<Map<String,Object>> project(Object value,Set<String> fields){
         if(!(value instanceof List<?> list))return List.of();
         return list.stream().filter(Map.class::isInstance).map(v->{Map<String,Object> row=new LinkedHashMap<>();((Map<?,?>)v).forEach((k,x)->{if(fields.contains(String.valueOf(k)))row.put(String.valueOf(k),x);});return row;}).toList();

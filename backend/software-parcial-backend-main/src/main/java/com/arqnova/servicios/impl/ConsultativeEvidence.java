@@ -41,6 +41,13 @@ public final class ConsultativeEvidence {
     }
 
     public String validate(Turn turn,Context context,String response){
+        return validate(turn,context,response,true);
+    }
+    /** Review handles cardinalities per finding; retain attribution and consensus safeguards. */
+    public String validateReferences(Turn turn,Context context,String response){
+        return validate(turn,context,response,false);
+    }
+    private String validate(Turn turn,Context context,String response,boolean checkCardinality){
         StringBuilder out=new StringBuilder();boolean code=false,correctCardinality=false,cardinalityTable=false;
         var facts=cardinalities(turn,context);
         Set<String> classNames=names(context.diagram().get("classes"));
@@ -50,7 +57,7 @@ public final class ConsultativeEvidence {
             if(code){out.append(line).append('\n');continue;}
             if(!line.contains("|"))cardinalityTable=false;
             if(line.contains("|")&&plain(line).matches(".*\\b(?:multiplicidad|multiplicidades|cardinalidad)\\b.*"))cardinalityTable=true;
-            if(cardinalityTable&&!facts.isEmpty()){correctCardinality=true;continue;}
+            if(checkCardinality&&cardinalityTable&&!facts.isEmpty()){correctCardinality=true;continue;}
             for(String sentence:line.split("(?<=[.!?])\\s+(?=[\\p{Lu}¿*])")){
             String value=plain(sentence);boolean hypothetical=HYPOTHETICAL.matcher(value).find();String replacement=null;
             if(!hypothetical&&!value.matches(".*\\b(?:no (?:hay|hubo|existe|consta|se|hemos)|sin (?:acuerdo|consenso))\\b.*")&&CONSENSUS.matcher(value).find())
@@ -83,7 +90,7 @@ public final class ConsultativeEvidence {
             boolean binding=value.matches(".*\\b(?:asociad[oa]s?|vinculad[oa]s?|relacionad[oa]s?|pertenece|pertenecen|admite|admiten|vincula|relaciona|asocia|tiene|tienen)\\b.*")
                     &&(mentionsPair||value.matches(".*\\b(?:cero|muchos|muchas|varios|varias|exactamente|[0-9]+)\\b.*"));
             boolean describesCardinality=value.matches(".*\\b(?:multiplicidad|multiplicidades|cardinalidad|instancias?|extremo)\\b.*")||(mentionsPair&&value.matches(".*\\bcada\\b.*"));
-            if(replacement==null&&!hypothetical&&!facts.isEmpty()&&mentionsEndpoint&&(binding||describesCardinality)){
+            if(checkCardinality&&replacement==null&&!hypothetical&&!facts.isEmpty()&&mentionsEndpoint&&(binding||describesCardinality)){
                 // Replace descriptions of actual cardinalities, not code or hypothetical advice.
                 correctCardinality=true;replacement="";
             }
@@ -91,7 +98,7 @@ public final class ConsultativeEvidence {
         }
         }
         boolean asksCardinality=plain(turn.instruction()).matches(".*\\b(?:multiplicidad|multiplicidades|cardinalidad)\\b.*");
-        if(correctCardinality||asksCardinality){out.append("\nLectura verificada del UML vigente (versión ").append(context.diagramVersion()).append("):\n");
+        if(checkCardinality&&(correctCardinality||asksCardinality)){out.append("\nLectura verificada del UML vigente (versión ").append(context.diagramVersion()).append("):\n");
             for(var fact:facts)out.append("- ").append(fact.get("reading")).append('\n');
         }
         String result=out.toString().strip();return result.isBlank()?"No hay evidencia suficiente para esa afirmación. Especifica la clase o propuesta que deseas evaluar.":result;

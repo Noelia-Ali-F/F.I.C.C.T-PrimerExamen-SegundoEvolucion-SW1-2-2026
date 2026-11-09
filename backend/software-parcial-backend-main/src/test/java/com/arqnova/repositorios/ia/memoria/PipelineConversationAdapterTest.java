@@ -10,7 +10,26 @@ import static org.mockito.Mockito.*;
 class PipelineConversationAdapterTest {
     final UmlAiProviderPipeline pipeline=mock(UmlAiProviderPipeline.class);
     final PipelineConversationAdapter adapter=new PipelineConversationAdapter(pipeline,new ObjectMapper());
-    Turn turn(){var now=Instant.now();return new Turn("request-001","p","noelia","Noelia",Mode.REVIEW,"Revisa",State.PENDING,null,null,3,now,now);}
+    Turn turn(){var now=Instant.now();return new Turn("request-001","p","noelia","Noelia",Mode.ASK,"Revisa",State.PENDING,null,null,3,now,now);}
+    @Test void reviewIncludesBoundedExistingMetadataAndValidatesFindingsWithoutDiscardingOthers()throws Exception{
+        var original=turn();var request=new Turn("review-meta","p","noelia","Noelia",Mode.REVIEW,"Revisa el diagrama",State.PENDING,null,null,3,original.createdAt(),original.updatedAt());
+        var graph=Map.<String,Object>of("classes",List.of(Map.of("id","venta","name","Venta","description","Responsabilidad documentada","responsibilities",List.of("Calcular total","x".repeat(2000)),"attributes",List.of(),"methods",List.of(Map.of("id","m","name","confirmar","parameters","","returnType","Boolean")))));
+        when(pipeline.generateConversation(anyString(),anyMap(),eq(1024))).thenReturn(new UmlAiProviderPipeline.Result("{\"answer\":\"El método confirmar tiene siete parámetros.\",\"findings\":[{\"severity\":\"ERROR\",\"elementId\":\"m\",\"message\":\"El método confirmar tiene siete parámetros.\"},{\"severity\":\"INFO\",\"elementId\":null,\"message\":\"Podrías separar responsabilidades.\"}]}","GROQ","fake",false));
+        var answer=adapter.answer(request,context(graph));
+        assertThat(answer.operations()).isEmpty();assertThat(answer.findings()).noneMatch(f->f.severity().equals("ERROR"));
+        assertThat(answer.findings().get(0).message()).contains("0 parámetros");
+        assertThat(answer.findings().get(1).message()).contains("Podrías separar responsabilidades");
+        var prompt=org.mockito.ArgumentCaptor.forClass(String.class);verify(pipeline).generateConversation(prompt.capture(),anyMap(),eq(1024));
+        assertThat(prompt.getValue()).contains("Responsabilidad documentada","Calcular total").doesNotContain("x".repeat(161));
+    }
+    @Test void emptyAndMissingReviewTargetsNeverCallProvider()throws Exception{
+        var original=turn();
+        for(var graph:List.<Map<String,Object>>of(Map.of("classes",List.of()),Map.of("classes",List.of(Map.of("id","venta","name","Venta"))))){
+            var request=new Turn("review-local","p","noelia","Noelia",Mode.REVIEW,"Revisa la clase Fantasma",State.PENDING,null,null,3,original.createdAt(),original.updatedAt());
+            assertThat(adapter.answer(request,context(graph)).provider()).isEqualTo("LOCAL");
+        }
+        verifyNoInteractions(pipeline);
+    }
     Context context(Map<String,Object> model){return new Context("p","Biblioteca","noelia",model,3,List.of(),List.of());}
     @Test void usesBoundedOutputAndReturnsAdviceWithoutOperations()throws Exception{
         when(pipeline.generateConversation(anyString(),anyMap(),eq(1024))).thenReturn(new UmlAiProviderPipeline.Result("{\"answer\":\"Puedes agregar un identificador.\",\"findings\":[]}","GROQ","fake",false));

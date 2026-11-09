@@ -195,6 +195,20 @@ class AiConversationServiceTest {
         }
         verify(provider, times(commands.size())).answer(any(), any());
     }
+    @Test void reviewRetainsAnalyzedVersionAndExplicitlyWarnsAboutConcurrentUpdate()throws Exception{
+        when(provider.answer(any(),any())).thenAnswer(call->{
+            Context analyzed=call.getArgument(1);assertThat(analyzed.diagramVersion()).isEqualTo(5);
+            when(projects.findDiagramByProjectId("p")).thenReturn(Optional.of(UmlDiagramEntity.builder().id("d").projectId("p").modelVersion(6).model(Map.of("classes",List.of())).build()));
+            return new Answer("Revisión del snapshot",List.of(),"FAKE","test");
+        });
+        service.send("p","ana","review-concurrent",Mode.REVIEW,"Revisa el modelo");queue.remove(0).run();
+        var result=service.get("p","ana","review-concurrent");
+        assertThat(result.diagramVersion()).isEqualTo(5);assertThat(result.state()).isEqualTo(State.COMPLETED);
+        assertThat(result.answer().text()).contains("posiblemente obsoleta","versión 5","versión 6");
+        assertThat(result.answer().findings()).anyMatch(f->f.severity().equals("WARNING")&&f.elementId()==null);
+        verify(projects,never()).saveDiagram(anyString(),anyString(),anyMap(),any());
+        assertThat(events.get(events.size()-1).diagramVersion()).isEqualTo(5);
+    }
     static class Memory implements AiMemoryPort{
         boolean enabled=true;Map<String,Turn> data=new LinkedHashMap<>();
         String key(String p,String r){return p+":"+r;}
