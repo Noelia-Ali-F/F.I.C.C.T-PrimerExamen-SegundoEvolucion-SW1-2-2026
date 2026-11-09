@@ -25,6 +25,31 @@ class ProjectActivityServiceTest {
         var next=service.history("p","u",first.nextCursor(),2);
         assertThat(next.items()).extracting(com.arqnova.modelo.ia.ProjectActivity::id).containsExactly("a");assertThat(next.nextCursor()).isNull();
     }
+    @Test void keepsStoredAttributionAndOptionalMetadataWithoutLookingUpFormerMembers(){
+        var historical=row("old");
+        var manual=row("manual");
+        manual.setUserId("former");manual.setElementId("book");manual.setElementType("class");
+        manual.setEventData(Map.of("element",Map.of("id","book","name","Libro")));
+        var ai=row("ai");
+        ai.setUserId("actor");ai.setElementId("total");ai.setElementType("attribute");
+        ai.setEventData(Map.of("origin","AI","executor","AI","requestId","request-001","provider","GROQ","elementName","Total"));
+        when(data.projectHistory("p",null,null,31)).thenReturn(List.of(ai,manual,historical));
+        var items=service.history("p","reader",null,30).items();
+        assertThat(items.get(0)).satisfies(item->{
+            assertThat(item.elementName()).isEqualTo("Total");
+            assertThat(item.elementType()).isEqualTo("attribute");
+            assertThat(item.requesterId()).isEqualTo("actor");
+            assertThat(item.executor()).isEqualTo("AI");
+            assertThat(item.provider()).isEqualTo("GROQ");
+            assertThat(item.requestId()).isEqualTo("request-001");
+        });
+        assertThat(items.get(1).author()).isEqualTo("Noelia");
+        assertThat(items.get(1).requesterId()).isEqualTo("former");
+        assertThat(items.get(1).elementName()).isEqualTo("Libro");
+        assertThat(items.get(1).executor()).isNull();
+        assertThat(items.get(2).elementName()).isNull();
+        assertThat(items.get(2).elementId()).isNull();
+    }
     @Test void checksProjectMembershipBeforeReadingAnyHistory(){
         when(projects.requireAccess("p","other")).thenThrow(new UnauthorizedActionException("Sin acceso"));
         assertThatThrownBy(()->service.history("p","other",null,20)).isInstanceOf(UnauthorizedActionException.class);verifyNoInteractions(data);

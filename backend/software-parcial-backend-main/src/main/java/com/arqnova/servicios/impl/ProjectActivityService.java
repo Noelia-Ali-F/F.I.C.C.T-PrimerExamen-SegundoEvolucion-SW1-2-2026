@@ -22,10 +22,27 @@ public final class ProjectActivityService implements ProjectActivityUseCase {
         var rows=activities.projectHistory(project,before,beforeId,limit+1);var visible=rows.stream().limit(limit).toList();
         String next=null;if(rows.size()>limit){var last=visible.get(visible.size()-1);next=Base64.getUrlEncoder().withoutPadding().encodeToString((last.getOccurredAt()+"|"+last.getEventId()).getBytes(StandardCharsets.UTF_8));}
         return new Page(visible.stream().map(v->new ProjectActivity(v.getEventId(),v.getUserName(),v.getEventType(),v.getOperation(),v.getOccurredAt().atZone(zone).toInstant().toEpochMilli(),
-                v.getUserId(), metadata(v,"executor"),metadata(v,"provider"),metadata(v,"requestId"),metadata(v,"instruction"))).toList(),next);
+                v.getUserId(), metadata(v,"executor"),metadata(v,"provider"),metadata(v,"requestId"),metadata(v,"instruction"),
+                v.getElementId(),v.getElementType(),recordedElementName(v))).toList(),next);
     }
     private String metadata(com.arqnova.modelo.entidades.UmlCollaborationActivityEntity event,String key) {
         var data=event.getEventData();
-        return data!=null&&"AI".equals(data.get("origin"))&&data.get(key) instanceof String value?value:null;
+        return data!=null&&"AI".equals(data.get("origin"))?stored(event,key):null;
+    }
+    private String recordedElementName(com.arqnova.modelo.entidades.UmlCollaborationActivityEntity event) {
+        String name=stored(event,"elementName");
+        if(name!=null||event.getEventData()==null||event.getElementId()==null)return name;
+        var data=event.getEventData();
+        String type=event.getElementType();
+        var snapshot=data.get("attribute".equals(type)?"attribute":"element");
+        if(snapshot instanceof Map<?,?> fields && event.getElementId().equals(fields.get("id"))
+                && fields.get("relation".equals(type)?"label":"name") instanceof String value && !value.isBlank()){
+            return value.substring(0,Math.min(120,value.length()));
+        }
+        return null;
+    }
+    private String stored(com.arqnova.modelo.entidades.UmlCollaborationActivityEntity event,String key) {
+        var data=event.getEventData();
+        return data!=null&&data.get(key) instanceof String value&&!value.isBlank()?value:null;
     }
 }

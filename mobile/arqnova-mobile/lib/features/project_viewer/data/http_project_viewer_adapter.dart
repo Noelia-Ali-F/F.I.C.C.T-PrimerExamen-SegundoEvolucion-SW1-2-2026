@@ -148,6 +148,14 @@ class HttpProjectViewerAdapter implements ProjectViewerPort {
               author: v['author'] as String,
               kind: v['kind'] as String,
               message: v['description'] as String,
+              elementId: v['elementId'] as String?,
+              elementType: v['elementType'] as String?,
+              elementName: v['elementName'] as String?,
+              requesterId: v['requesterId'] as String?,
+              executor: v['executor'] as String?,
+              provider: v['provider'] as String?,
+              requestId: v['requestId'] as String?,
+              instruction: v['instruction'] as String?,
               at: DateTime.fromMillisecondsSinceEpoch(
                 (v['timestamp'] as num).toInt(),
               ),
@@ -194,10 +202,16 @@ class HttpProjectViewerAdapter implements ProjectViewerPort {
                 : state == 'FAILED'
                 ? 'La solicitud no pudo completarse.'
                 : (v['answer']?['text'] ?? '') as String;
+        final noChange =
+            v['mode'] == 'MODEL' &&
+            state == 'COMPLETED' &&
+            v['answer']?['operations'] is List &&
+            (v['answer']['operations'] as List).isEmpty;
         return TimelineEntry(
           id: v['requestId'] as String,
+          requestId: v['requestId'] as String,
           author: v['authorName'] as String,
-          kind: mode,
+          kind: noChange ? 'Modelado con IA · sin cambios' : mode,
           message: '${v['instruction']}\n\n$answer',
           at: DateTime.parse(v['updatedAt'] as String),
           ai: true,

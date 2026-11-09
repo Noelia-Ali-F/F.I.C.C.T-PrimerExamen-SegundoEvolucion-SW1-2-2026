@@ -27,7 +27,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
   bool diagramLoading = true, detailsOpen = false, accessDenied = false;
   String? diagramError;
   List<TimelineEntry> entries = [];
-  List<String> warnings = [];
+  Map<TimelineSource, String> failures = {};
   String? activityCursor, aiCursor, historyError;
   bool loading = false;
   @override
@@ -57,7 +57,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
       diagramLoading = true;
       diagramError = null;
       entries = [];
-      warnings = [];
+      failures = {};
       activityCursor = aiCursor = historyError = null;
       loading = false;
     });
@@ -101,7 +101,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
       diagramLoading = loading = false;
       diagramError = historyError = error.message;
       entries = [];
-      warnings = [];
+      failures = {};
       activityCursor = aiCursor = null;
     });
     if (error.status == 401) {
@@ -112,9 +112,22 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
     return true;
   }
 
-  Future<void> loadHistory({bool older = false}) async {
+  Future<void> loadHistory({bool older = false, TimelineSource? retry}) async {
     if (loading || accessDenied) return;
     final request = generation;
+    final paginate = older || retry != null;
+    final readActivity =
+        retry == TimelineSource.activity ||
+        (retry == null &&
+            (!older ||
+                activityCursor != null &&
+                    !failures.containsKey(TimelineSource.activity)));
+    final readAi =
+        retry == TimelineSource.conversation ||
+        (retry == null &&
+            (!older ||
+                aiCursor != null &&
+                    !failures.containsKey(TimelineSource.conversation)));
     setState(() {
       loading = true;
       historyError = null;
@@ -123,20 +136,36 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
       final page = await widget.useCases.timeline(
         widget.session,
         widget.project.id,
-        activityCursor: older ? activityCursor : null,
-        aiCursor: older ? aiCursor : null,
-        loadActivity: !older || activityCursor != null,
-        loadAi: !older || aiCursor != null,
+        activityCursor: paginate ? activityCursor : null,
+        aiCursor: paginate ? aiCursor : null,
+        loadActivity: readActivity,
+        loadAi: readAi,
       );
       if (!accepts(request)) return;
       setState(() {
         entries = ProjectViewerUseCases.merge(
-          older ? entries : [],
+          paginate
+              ? entries
+              : entries
+                  .where(
+                    (entry) => page.failures.containsKey(
+                      entry.ai
+                          ? TimelineSource.conversation
+                          : TimelineSource.activity,
+                    ),
+                  )
+                  .toList(),
           page.entries,
         );
         activityCursor = page.activityCursor;
         aiCursor = page.aiCursor;
-        warnings = page.warnings;
+        failures = {
+          if (!readActivity && failures.containsKey(TimelineSource.activity))
+            TimelineSource.activity: failures[TimelineSource.activity]!,
+          if (!readAi && failures.containsKey(TimelineSource.conversation))
+            TimelineSource.conversation: failures[TimelineSource.conversation]!,
+          ...page.failures,
+        };
         loading = false;
       });
     } catch (e) {
@@ -208,122 +237,187 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
     'dependency' => 'Dependencia',
     _ => 'Asociación',
   };
-  @override
-  Widget build(BuildContext context) => DefaultTabController(
-    length: 2,
-    child: Scaffold(
-      appBar: AppBar(
-        title: Text(accessDenied ? 'Proyecto UML' : widget.project.name),
-        actions: [
-          IconButton(
-            tooltip: 'Ver clases y relaciones',
-            icon: const Icon(Icons.list_alt),
-            onPressed:
-                current == null
-                    ? null
-                    : () => setState(() {
-                      detailsOpen = !detailsOpen;
-                    }),
-          ),
-          IconButton(
-            tooltip: 'Actualizar',
-            icon: const Icon(Icons.refresh),
-            onPressed: refresh,
-          ),
-        ],
-        bottom: const TabBar(
-          tabs: [Tab(text: 'Diagrama'), Tab(text: 'Actividad')],
-        ),
-      ),
-      body: TabBarView(
-        children: [
-          Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(10),
-                child: Text('Solo lectura · Amplía y desplaza el diagrama'),
-              ),
-              Expanded(
-                child:
-                    diagramError != null
-                        ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(diagramError!),
-                          ),
-                        )
-                        : diagramLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : current == null
-                        ? const SizedBox.shrink()
-                        : detailsOpen
-                        ? elements(current!)
-                        : ReadOnlyDiagram(
-                          key: ValueKey((widget.project.id, current!.version)),
-                          diagram: current!,
-                        ),
-              ),
-            ],
-          ),
-          RefreshIndicator(
-            onRefresh: () => loadHistory(),
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (historyError != null)
+  String sourceName(TimelineSource source) =>
+      source == TimelineSource.activity ? 'Bitácora UML' : 'Conversación IA';
+
+  Widget activityCard(TimelineEntry entry, TimelineEntry? conversation) {
+    final details = [
+      if (entry.elementName != null) 'Elemento: ${entry.elementName}',
+      if (entry.elementType != null) 'Tipo: ${entry.elementType}',
+      if (entry.elementId != null) 'ID: ${entry.elementId}',
+      if (entry.confirmedAiChange) ...[
+        if (entry.requesterId != null) 'Solicitante: ${entry.requesterId}',
+        'Ejecutor: ${entry.executor}',
+        if (entry.provider != null) 'Proveedor: ${entry.provider}',
+        if (entry.requestId != null) 'Solicitud: ${entry.requestId}',
+        if (entry.instruction != null) 'Instrucción: ${entry.instruction}',
+      ],
+    ];
+    final title = Text(
+      '${entry.author} · ${entry.ai
+          ? entry.kind
+          : entry.confirmedAiChange
+          ? 'Modificación UML por IA'
+          : 'Actividad'}',
+    );
+    final icon = Icon(
+      entry.ai || entry.confirmedAiChange
+          ? Icons.auto_awesome
+          : Icons.person_outline,
+    );
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(entry.at.toLocal().toString().substring(0, 16)),
+        const SizedBox(height: 8),
+        SelectableText(entry.message),
+        for (final line in details) SelectableText(line),
+      ],
+    );
+    return Card(
+      key: ValueKey(entry.key),
+      child:
+          entry.confirmedAiChange && conversation != null
+              ? ExpansionTile(
+                leading: icon,
+                title: title,
+                subtitle: body,
+                children: [
                   ListTile(
-                    leading: const Icon(Icons.error_outline),
-                    title: Text(historyError!),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: () => loadHistory(),
-                    ),
+                    title: const Text('Conversación vinculada'),
+                    subtitle: SelectableText(conversation.message),
                   ),
-                for (final warning in warnings)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(warning),
-                  ),
-                if (!loading && historyError == null && entries.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Todavía no hay actividad registrada.'),
-                  ),
-                for (final entry in entries)
-                  Card(
-                    child: ListTile(
-                      leading: Icon(
-                        entry.ai ? Icons.auto_awesome : Icons.person_outline,
-                      ),
-                      title: Text(
-                        '${entry.author} · ${entry.ai ? entry.kind : 'Actividad'}',
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(entry.at.toLocal().toString().substring(0, 16)),
-                          const SizedBox(height: 8),
-                          SelectableText(entry.message),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (loading)
-                  const Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                if (!loading && (activityCursor != null || aiCursor != null))
-                  OutlinedButton(
-                    onPressed: () => loadHistory(older: true),
-                    child: const Text('Ver actividad anterior'),
-                  ),
+                ],
+              )
+              : ListTile(leading: icon, title: title, subtitle: body),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final conversations = {
+      for (final entry in entries)
+        if (entry.ai) entry.requestId: entry,
+    };
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(accessDenied ? 'Proyecto UML' : widget.project.name),
+          actions: [
+            IconButton(
+              tooltip: 'Ver clases y relaciones',
+              icon: const Icon(Icons.list_alt),
+              onPressed:
+                  current == null
+                      ? null
+                      : () => setState(() {
+                        detailsOpen = !detailsOpen;
+                      }),
+            ),
+            IconButton(
+              tooltip: 'Actualizar',
+              icon: const Icon(Icons.refresh),
+              onPressed: refresh,
+            ),
+          ],
+          bottom: const TabBar(
+            tabs: [Tab(text: 'Diagrama'), Tab(text: 'Actividad')],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text('Solo lectura · Amplía y desplaza el diagrama'),
+                ),
+                Expanded(
+                  child:
+                      diagramError != null
+                          ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(diagramError!),
+                            ),
+                          )
+                          : diagramLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : current == null
+                          ? const SizedBox.shrink()
+                          : detailsOpen
+                          ? elements(current!)
+                          : ReadOnlyDiagram(
+                            key: ValueKey((
+                              widget.project.id,
+                              current!.version,
+                            )),
+                            diagram: current!,
+                          ),
+                ),
               ],
             ),
-          ),
-        ],
+            RefreshIndicator(
+              onRefresh: () => loadHistory(),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (historyError != null)
+                    ListTile(
+                      leading: const Icon(Icons.error_outline),
+                      title: Text(historyError!),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => loadHistory(),
+                      ),
+                    ),
+                  for (final failure in failures.entries)
+                    ListTile(
+                      title: Text(
+                        '${sourceName(failure.key)}: ${failure.value}',
+                      ),
+                      trailing: TextButton(
+                        onPressed:
+                            loading
+                                ? null
+                                : () => loadHistory(retry: failure.key),
+                        child: const Text('Reintentar'),
+                      ),
+                    ),
+                  if (!loading &&
+                      historyError == null &&
+                      failures.isEmpty &&
+                      entries.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Todavía no hay actividad registrada.'),
+                    ),
+                  for (final entry in entries)
+                    activityCard(entry, conversations[entry.requestId]),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  if (!loading &&
+                      (activityCursor != null &&
+                              !failures.containsKey(TimelineSource.activity) ||
+                          aiCursor != null &&
+                              !failures.containsKey(
+                                TimelineSource.conversation,
+                              )))
+                    OutlinedButton(
+                      onPressed: () => loadHistory(older: true),
+                      child: const Text('Ver actividad anterior'),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

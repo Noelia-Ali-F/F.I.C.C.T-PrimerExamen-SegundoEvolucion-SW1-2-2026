@@ -28,13 +28,24 @@ class TimelineEntry {
     required this.message,
     required this.at,
     this.ai = false,
+    this.elementId,
+    this.elementType,
+    this.elementName,
+    this.requesterId,
+    this.executor,
+    this.provider,
+    this.requestId,
+    this.instruction,
   });
   final String id;
   final String author;
   final String kind;
   final String message;
   final DateTime at;
-  final bool ai;
+  final bool ai; // Conversation source, not the executor of a SQL activity.
+  final String? elementId, elementType, elementName;
+  final String? requesterId, executor, provider, requestId, instruction;
+  bool get confirmedAiChange => !ai && executor == 'AI';
   String get key => '${ai ? 'ai' : 'user'}:$id';
 }
 
@@ -44,17 +55,20 @@ class ViewerPage<T> {
   final String? cursor;
 }
 
+enum TimelineSource { activity, conversation }
+
 class ViewerTimeline {
   const ViewerTimeline(
     this.entries,
     this.activityCursor,
     this.aiCursor,
-    this.warnings,
+    this.failures,
   );
   final List<TimelineEntry> entries;
   final String? activityCursor;
   final String? aiCursor;
-  final List<String> warnings;
+  final Map<TimelineSource, String> failures;
+  List<String> get warnings => failures.values.toList();
 }
 
 class ViewerException implements Exception {

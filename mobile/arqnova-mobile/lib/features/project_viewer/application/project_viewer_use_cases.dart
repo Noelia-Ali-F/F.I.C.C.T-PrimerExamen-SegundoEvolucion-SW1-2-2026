@@ -26,32 +26,34 @@ class ProjectViewerUseCases {
     bool loadActivity = true,
     bool loadAi = true,
   }) async {
-    var human = const ViewerPage<TimelineEntry>([], null);
-    var ai = const ViewerPage<TimelineEntry>([], null);
-    final warnings = <String>[];
+    var human = ViewerPage<TimelineEntry>([], activityCursor);
+    var ai = ViewerPage<TimelineEntry>([], aiCursor);
+    final failures = <TimelineSource, String>{};
     if (loadActivity) {
       try {
         human = await port.activities(session, project, activityCursor);
       } on ViewerException catch (e) {
         _checkAccess(e);
-        warnings.add(e.message);
+        failures[TimelineSource.activity] = e.message;
       }
     }
     if (loadAi) {
       try {
         if (await port.conversationsEnabled(session, project)) {
           ai = await port.conversations(session, project, aiCursor);
+        } else {
+          ai = const ViewerPage([], null);
         }
       } on ViewerException catch (e) {
         _checkAccess(e);
-        warnings.add(e.message);
+        failures[TimelineSource.conversation] = e.message;
       }
     }
     return ViewerTimeline(
       merge([], [...human.items, ...ai.items]),
       human.cursor,
       ai.cursor,
-      warnings,
+      failures,
     );
   }
 
