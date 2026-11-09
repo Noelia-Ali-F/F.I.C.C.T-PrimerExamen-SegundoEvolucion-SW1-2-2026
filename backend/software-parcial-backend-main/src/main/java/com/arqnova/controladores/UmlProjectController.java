@@ -36,6 +36,7 @@ import java.util.UUID;
 public class UmlProjectController {
 
     private final ProjectUseCase service;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messaging;
 
     @GetMapping
     public ApiResponse<List<ProjectResponse>> list(@RequestHeader("X-Usuario") String username) {
@@ -101,6 +102,15 @@ public class UmlProjectController {
             @RequestHeader(value = "X-Model-Version", defaultValue = "0") int modelVersion,
             @RequestBody Map<String, Object> model) {
         UmlDiagramEntity saved = service.saveDiagramFromRest("diagram-" + projectId, projectId, model, modelVersion, principal.getName());
+        // The transactional service has committed before returning. Notify the same
+        // authorized project subscribers without inventing an AI turn or duplicating it.
+        try {
+            messaging.convertAndSend("/topic/ai/" + projectId, Map.of(
+                    "projectId", projectId, "state", "DIAGRAM_UPDATED", "diagramVersion", saved.getModelVersion()));
+        } catch (RuntimeException notificationUnavailable) {
+            org.slf4j.LoggerFactory.getLogger(UmlProjectController.class)
+                    .warn("Diagrama guardado; aviso en tiempo real no disponible para {}", projectId);
+        }
         return ApiResponse.ok("Diagrama guardado", diagramResponse(saved));
     }
 

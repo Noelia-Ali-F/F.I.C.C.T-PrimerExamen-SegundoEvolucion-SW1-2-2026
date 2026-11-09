@@ -8,4 +8,4 @@ export interface AiTurn {
   errorCode: string | null; diagramVersion: number; createdAt: string; updatedAt: string;
 }
 export interface AiConversationPage { turns: AiTurn[]; nextCursor: string | null; }
-export interface AiConversationChange { projectId: string; requestId?: string; state: AiTurnState | 'CONNECTED'; mode?: AiConversationMode; diagramVersion?: number; }
+export interface AiConversationChange { projectId: string; requestId?: string; state: AiTurnState | 'CONNECTED' | 'DIAGRAM_UPDATED'; mode?: AiConversationMode; diagramVersion?: number; }

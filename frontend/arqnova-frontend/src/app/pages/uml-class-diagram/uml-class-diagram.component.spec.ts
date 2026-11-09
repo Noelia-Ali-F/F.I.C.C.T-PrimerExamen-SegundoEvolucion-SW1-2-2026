@@ -44,6 +44,23 @@ describe('UmlClassDiagramComponent', () => {
     (component as any).watchTeamModeling();events.next({projectId:'project-test',state:'COMPLETED',mode:'MODEL',diagramVersion:2});
     expect(get).toHaveBeenCalledTimes(1);expect(component.model().title).toBe('Modelo remoto');expect(save).not.toHaveBeenCalled();
   });
+
+  it('actualiza el lienzo al recibir el guardado REST de Editar diagrama sin requerir un turno del chat', () => {
+    const events=new Subject<any>();
+    (component as any).teamAi={status:()=>of({enabled:true}),watch:()=>events};
+    const remote={...DEFAULT_UML_MODEL,title:'Cambio por texto guardado'};
+    const get=vi.spyOn(TestBed.inject(UmlProjectStoreService),'get').mockReturnValue(of({
+      id:'project-test',name:remote.title,description:'',status:'EN_EDICION',createdAt:new Date().toISOString(),
+      updatedAt:new Date().toISOString(),model:remote,modelVersion:104
+    }));
+    const save=vi.spyOn(TestBed.inject(UmlProjectStoreService),'saveModel');
+    (component as any).watchTeamModeling();
+    events.next({projectId:'project-test',state:'DIAGRAM_UPDATED',diagramVersion:104});
+    expect(component.model().title).toBe(remote.title);
+    events.next({projectId:'project-test',state:'DIAGRAM_UPDATED',diagramVersion:104});
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+  });
   it('refleja la multiplicidad guardada en el lienzo y omite una confirmación repetida', () => {
     const initial = DEFAULT_UML_MODEL;
     const updated = { ...initial, relations: initial.relations.map((relation, index) =>

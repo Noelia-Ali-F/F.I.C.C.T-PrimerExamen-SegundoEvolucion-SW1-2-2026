@@ -545,6 +545,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
       this.teamAiSubscriptions.add(this.teamAi.watch(this.projectId).subscribe(change=>{
         if(change.projectId!==this.projectId)return;
         if(change.state==='CONNECTED')this.refreshCanonicalModel();
+        if(change.state==='DIAGRAM_UPDATED')this.syncTeamModel(change.diagramVersion);
         if(change.mode==='MODEL'&&change.state==='COMPLETED')this.syncTeamModel(change.diagramVersion);
       }));
     },error:()=>{this.teamAiWatching=false;}}));
