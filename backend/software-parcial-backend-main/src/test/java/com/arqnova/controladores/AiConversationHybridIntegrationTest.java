@@ -50,6 +50,7 @@ class AiConversationHybridIntegrationTest {
     }
     @AfterAll static void cleanup(){if(admin!=null){admin.deleteTable(r->r.tableName(TABLE));admin.close();}}
     @Autowired MockMvc mvc;@Autowired UserStore users;@Autowired AuthTokenPort tokens;@Autowired UmlProjectPersistenceService projects;
+    @Autowired com.arqnova.servicios.puertos.entrada.UserQueryUseCase userQuery;
     @Autowired AiMemoryPort memory;@Autowired PlatformTransactionManager transactions;
     @Autowired AiModelMutationPort mutations;
     @Autowired CollaborationSessionStore sessions;
@@ -137,6 +138,25 @@ class AiConversationHybridIntegrationTest {
                 .andExpect(jsonPath("$.datos.state").value("COMPLETED")).andExpect(jsonPath("$.datos.diagramVersion").value(2));
         verifyNoInteractions(provider);
     }
+    @Test void competingRecoveredWorkersCommitExactlyOneModelMutation() throws Exception {
+        var turn=modelTurn("recover-competing");
+        memory.begin(turn);
+        when(provider.answer(any(),any())).thenReturn(createAnswer());
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var one=new com.arqnova.servicios.impl.AiConversationService(memory,provider,event->{},pool::execute,
+                    projects,userQuery,java.time.Clock.systemUTC(),mutations,activityData);
+            var two=new com.arqnova.servicios.impl.AiConversationService(memory,provider,event->{},pool::execute,
+                    projects,userQuery,java.time.Clock.systemUTC(),mutations,activityData);
+            one.send(project,username,turn.requestId(),Mode.MODEL,turn.instruction());
+            two.send(project,username,turn.requestId(),Mode.MODEL,turn.instruction());
+            awaitResult(turn.requestId());
+            assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(2);
+            assertThat(mutations.find(turn)).isPresent();
+            verify(provider,times(1)).answer(any(),any());
+        } finally {pool.shutdownNow();}
+    }
+
     @Test void viewerCannotRequestModeling() throws Exception {
         String otherName=tokens.verificar(outsider).username();
         projects.addMember(project,otherName,ProjectMemberRole.VIEWER);

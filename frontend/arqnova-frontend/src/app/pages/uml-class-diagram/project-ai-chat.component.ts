@@ -1,3 +1,4 @@
+import { AuthService } from '../../auth/auth.service';
 import { CommonModule } from '@angular/common';
 import { Component,Input,OnInit,OnDestroy,inject,output,signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -9,7 +10,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
 @Component({selector:'app-project-ai-chat',standalone:true,imports:[CommonModule,FormsModule],
   template:`
     <div class="chat-info">Conversación compartida del proyecto. Solo el modo Modificar diagrama puede editar el lienzo.</div>
-    @if(error()){<p class="chat-error" role="alert">{{error()}}</p>}
+    @if(error()){<p class="chat-error" role="alert">{{error()}}</p><button type="button" (click)="recover()">Recuperar conversación</button>}
     @if(loading()){<p aria-live="polite">Cargando conversación…</p>}
     @if(enabled()){
       <div class="chat-scroll" aria-live="polite">
@@ -20,7 +21,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
             <header><strong>{{turn.authorName}}</strong><time>{{turn.createdAt|date:'short'}}</time></header>
             <span class="chat-mode">{{modeLabels[turn.mode]}}</span>
             <p class="question">{{turn.instruction}}</p>
-            @if(turn.state==='PENDING'){<p class="pending">La IA está preparando la respuesta…</p>}
+            @if(turn.state==='PENDING'){<p class="pending">La solicitud está en proceso o en recuperación. El resultado aparecerá cuando quede guardado.</p>}
             @else if(turn.state==='FAILED'){<p class="chat-error">{{failureText(turn.errorCode)}}</p>}
             @else if(turn.answer;as answer){
               <div class="answer"><strong>Asistente IA</strong><p>{{answer.text}}</p>
@@ -51,6 +52,10 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   @Input({required:true})projectId='';
   readonly modelCompleted = output<number>();
   private readonly service=inject(AiConversationService);
+  private readonly auth=inject(AuthService);
+  private storageKey='';
+  private reconcilingSends=false;
+  private unconfirmed: {requestId:string;mode:AiConversationMode;instruction:string}[]=[];
   private subscriptions=new Subscription();private poll?:ReturnType<typeof setInterval>;private refreshing=false;private refreshAgain=false;private historyLoaded=false;
   private reconciliationTimer?: ReturnType<typeof setInterval>;
   private historyHead: string | null = null;
@@ -66,6 +71,7 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
     this.availableModes.set(status.modes ?? []);
     this.modelingEnabled.set(this.availableModes().includes('MODEL'));this.enabled.set(status.enabled);this.loading.set(false);
     if(!status.enabled){this.error.set('La conversación compartida todavía no está habilitada. Puedes seguir usando Editar diagrama.');return;}
+    this.restoreUnconfirmed();
     this.refresh();this.subscriptions.add(this.service.watch(this.projectId).subscribe(change=>change.requestId?this.loadTurn(change.requestId):this.refresh()));
     this.reconciliationTimer = setInterval(() => {
       if (!this.refreshing && !this.loadingOlder()) this.refresh();
@@ -74,6 +80,13 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   },error:()=>{this.loading.set(false);this.error.set('No se pudo conectar con la conversación compartida.');}}));}
   ngOnDestroy(){this.subscriptions.unsubscribe();if(this.poll)clearInterval(this.poll);clearInterval(this.reconciliationTimer);}
   private acceptTurns(incoming: AiTurn[]) {
+    for (const turn of incoming) {
+      if (turn.projectId === this.projectId && turn.authorId === this.auth.currentUser()?.username) {
+        this.unconfirmed = this.unconfirmed.filter(pending => !(pending.requestId === turn.requestId
+          && pending.mode === turn.mode && pending.instruction === turn.instruction));
+      }
+    }
+    this.persistUnconfirmed();
     this.turns.update(turns => mergeAiTurns(turns, incoming));
     const version = incoming.reduce((latest, turn) =>
       turn.mode === 'MODEL' && turn.state === 'COMPLETED' ? Math.max(latest, turn.diagramVersion) : latest, 0);
@@ -81,7 +94,10 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   }
   private loadTurn(id:string){if(this.loadingTurns.has(id))return;this.loadingTurns.add(id);this.subscriptions.add(this.service.get(this.projectId,id).subscribe({next:turn=>{
     this.acceptTurns([turn]);this.loadingTurns.delete(id);
-  },error:()=>this.loadingTurns.delete(id)}));}
+  },error:()=>{
+    this.loadingTurns.delete(id);
+    this.error.set('No se pudo comprobar el estado de una solicitud. El último estado visible puede estar desactualizado.');
+  }}));}
   refresh() {
     if (this.refreshing) { this.refreshAgain = true; return; }
     this.refreshing = true;
@@ -123,17 +139,76 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
   loadOlder(){const cursor=this.cursor();if(!cursor||this.loadingOlder())return;this.loadingOlder.set(true);this.subscriptions.add(this.service.history(this.projectId,cursor).subscribe({next:page=>{
     this.acceptTurns(page.turns);this.cursor.set(page.nextCursor);this.loadingOlder.set(false);
   },error:()=>{this.loadingOlder.set(false);this.error.set('No se pudieron cargar mensajes anteriores.');}}));}
+  private persistUnconfirmed(): boolean {
+    if(!this.storageKey)return true;
+    try {
+      if(this.unconfirmed.length)localStorage.setItem(this.storageKey,JSON.stringify(this.unconfirmed));
+      else localStorage.removeItem(this.storageKey);
+      return true;
+    } catch {
+      this.error.set('No se pudo conservar el identificador del envío en este navegador. Revisa el almacenamiento antes de reintentar.');
+      return false;
+    }
+  }
+  private restoreUnconfirmed() {
+    const user=this.auth.currentUser()?.username;
+    if(!user)return;
+    this.storageKey='arqnova-ai-unconfirmed-v1:'+encodeURIComponent(user)+':'+encodeURIComponent(this.projectId);
+    try {
+      const pending=JSON.parse(localStorage.getItem(this.storageKey)??'[]');
+      if(!Array.isArray(pending)||pending.length>10||pending.some(item=>!item
+        ||typeof item.requestId!=='string'||!/^[A-Za-z0-9_-]{8,100}$/.test(item.requestId)
+        ||!['ASK','REVIEW','ADVISE','MEDIATE','MODEL'].includes(item.mode)
+        ||typeof item.instruction!=='string'||!item.instruction.trim()||item.instruction.length>4000))throw new Error();
+      this.unconfirmed=pending;
+      const latest=this.unconfirmed.at(-1);
+      if(latest&&!this.instruction.trim()){this.mode=latest.mode;this.instruction=latest.instruction;}
+      this.reconcileUnconfirmed();
+    } catch {this.error.set('No se pudieron recuperar los envíos locales. Conserva tu instrucción antes de volver a intentar.');}
+  }
+  private reconcileUnconfirmed() {
+    if(this.reconcilingSends||!this.unconfirmed.length)return;
+    this.reconcilingSends=true;
+    const pending=[...this.unconfirmed];
+    let remaining=pending.length;
+    for(const item of pending){
+      this.subscriptions.add(this.service.get(this.projectId,item.requestId).subscribe({
+        next:turn=>{
+          this.acceptTurns([turn]);
+          if(this.instruction.trim()===item.instruction&&this.mode===item.mode
+            &&!this.unconfirmed.some(value=>value.requestId===item.requestId))this.instruction='';
+          if(--remaining===0)this.reconcilingSends=false;
+        },
+        error:failure=>{
+          if(--remaining===0)this.reconcilingSends=false;
+          this.error.set(failure?.status===404
+            ? 'El servidor todavía no registra este envío. Puedes enviarlo otra vez conservando su identificador.'
+            : 'No se pudo confirmar el envío anterior. Recupera la conversación antes de reenviarlo.');
+        }
+      }));
+    }
+  }
+  recover(){if(!this.enabled()){this.ngOnInit();return;}this.reconcileUnconfirmed();this.refresh();}
   prepareModeling(instruction: string) {
     if (!this.modelingEnabled() || this.sending() || this.instruction.trim()) return;
     this.mode = 'MODEL';
     this.instruction = instruction;
   }
-  send(){if(this.sending()||!this.instruction.trim())return;this.sending.set(true);this.error.set('');
+  send(){if(this.sending()||!this.instruction.trim())return;
+    if(this.mode==='MODEL'&&!this.modelingEnabled()){this.error.set('Tu acceso actual no permite modificar el diagrama. Recupera la conversación para comprobar el envío anterior.');return;}
+    this.sending.set(true);this.error.set('');
     const content=JSON.stringify([this.mode,this.instruction.trim()]);
+    const previous=this.unconfirmed.find(item=>item.mode===this.mode&&item.instruction===this.instruction.trim());
+    if(previous){this.requestId=previous.requestId;this.requestContent=content;}
     if(!this.requestId||this.requestContent!==content){this.requestId=crypto.randomUUID();this.requestContent=content;}const id=this.requestId;
+    if(!this.unconfirmed.some(item=>item.requestId===id)){
+      if(this.unconfirmed.length>=10){this.sending.set(false);this.error.set('Recupera los envíos pendientes antes de enviar otra solicitud.');return;}
+      this.unconfirmed.push({requestId:id,mode:this.mode,instruction:this.instruction.trim()});
+    }
+    if(!this.persistUnconfirmed()){this.sending.set(false);return;}
     this.subscriptions.add(this.service.send(this.projectId,id,this.mode,this.instruction).subscribe({next:turn=>{
       this.acceptTurns([turn]);if(JSON.stringify([this.mode,this.instruction.trim()])===content)this.instruction='';this.requestId=null;this.sending.set(false);this.refresh();
     },error:()=>{this.sending.set(false);this.error.set('No se confirmó el envío. Vuelve a enviar el mismo mensaje para comprobarlo sin duplicarlo.');}}));
   }
-  failureText(code:string|null){switch(code){case'AI_MODEL_CONFLICT':return'El diagrama cambió o un elemento está en edición. Revisa la versión guardada antes de enviar otra solicitud.';case'AI_INVALID_OPERATIONS':return'La solicitud no produjo un lote UML válido. No se aplicaron cambios.';case'AI_CONTEXT_TOO_LARGE':return'El diagrama supera el contexto permitido para esta consulta. El modelo guardado se conserva.';case'AI_RATE_LIMITED':return'La IA alcanzó temporalmente su cuota. Intenta una nueva consulta más tarde.';case'AI_REQUEST_INTERRUPTED':return'La solicitud se interrumpió. Puedes enviar una nueva consulta.';case'AI_QUEUE_BUSY':return'Hay varias solicitudes en espera. Intenta más tarde.';case'ACCESS_CHANGED':return'El acceso al proyecto cambió durante la solicitud.';default:return'El proveedor de IA no pudo completar esta respuesta. El diagrama no fue modificado.';}}
+  failureText(code:string|null){switch(code){case'AI_MODEL_CONFLICT':return'El diagrama cambió o un elemento está en edición. Revisa la versión guardada antes de enviar otra solicitud.';case'AI_INVALID_OPERATIONS':return'La solicitud no produjo un lote UML válido. No se aplicaron cambios.';case'AI_CONTEXT_TOO_LARGE':return'El diagrama supera el contexto permitido para esta consulta. El modelo guardado se conserva.';case'AI_RATE_LIMITED':return'La IA alcanzó temporalmente su cuota. Intenta una nueva consulta más tarde.';case'AI_REQUEST_INTERRUPTED':return'La solicitud se interrumpió y no tiene un resultado guardado. Puedes enviar una nueva consulta.';case'AI_RECOVERY_EXHAUSTED':return'No se logró guardar un resultado tras los intentos de recuperación. La IA pudo haber procesado la solicitud; revisa el diagrama y el historial antes de enviar otra.';case'AI_QUEUE_BUSY':return'Hay varias solicitudes en espera. Intenta más tarde.';case'ACCESS_CHANGED':return'El acceso al proyecto cambió durante la solicitud.';default:return'El proveedor de IA no pudo completar esta respuesta. El diagrama no fue modificado.';}}
 }

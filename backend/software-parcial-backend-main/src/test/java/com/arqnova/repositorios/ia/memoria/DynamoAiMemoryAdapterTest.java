@@ -77,5 +77,107 @@ class DynamoAiMemoryAdapterTest {
             for(var result:pool.invokeAll(calls))assertThat(result.get().created()).isTrue();
             assertThat(adapter.history(p,null,20).turns()).hasSize(8);
         }finally{pool.shutdownNow();}
+    }    @Test void leasesFenceConcurrentWorkersAndRecoverStagedResultAfterRestart() throws Exception {
+        var turn = pending(UUID.randomUUID().toString(),"ana","lease-request",0);
+        adapter.begin(turn);
+        var pool=Executors.newFixedThreadPool(2);
+        try {
+            var futures=pool.invokeAll(List.<Callable<Optional<Job>>>of(
+                    () -> adapter.claim(turn,"one",100,220),
+                    () -> adapter.claim(turn,"two",100,220)));
+            var wins=new ArrayList<Job>();
+            for(var future:futures) future.get().ifPresent(wins::add);
+            assertThat(wins).hasSize(1);
+            var old=wins.get(0);
+            assertThat(adapter.renew(old,110,230)).isTrue();
+            assertThat(adapter.claim(turn,"next",229,350)).isEmpty();
+            var next=adapter.claim(turn,"next",231,350).orElseThrow();
+            var result=turn.finish(new Answer("Durable",List.of(),"FAKE","test"),turn.createdAt());
+            assertThat(adapter.stage(old,result,232)).isFalse();
+            assertThat(adapter.complete(old,result,232)).isFalse();
+            assertThat(adapter.stage(next,result,232)).isTrue();
+            var restarted=new DynamoAiMemoryAdapter(client,json,table);
+            var resumed=restarted.claim(turn,"restart",351,470).orElseThrow();
+            assertThat(resumed.result()).isEqualTo(result);
+            var foreign=pending(UUID.randomUUID().toString(),"ana","other-result",0)
+                    .finish(new Answer("Ajena",List.of(),"FAKE","test"),turn.createdAt());
+            assertThatThrownBy(()->restarted.stage(resumed,foreign,352)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(()->restarted.complete(resumed,foreign,352)).isInstanceOf(IllegalArgumentException.class);
+            assertThat(restarted.complete(resumed,result,352)).isTrue();
+            assertThat(restarted.find(turn.projectId(),turn.requestId())).contains(result);
+            assertThat(restarted.claim(turn,"duplicate",471,590)).isEmpty();
+        } finally {pool.shutdownNow();}
     }
+
+    @Test void durableWorkerRetriesFinalWritesAndRecoversWithoutCallingProviderAgain() throws Exception {
+        var spy=org.mockito.Mockito.spy(adapter);
+        var projects=org.mockito.Mockito.mock(com.arqnova.servicios.puertos.entrada.ProjectUseCase.class);
+        var users=org.mockito.Mockito.mock(com.arqnova.servicios.puertos.entrada.UserQueryUseCase.class);
+        var provider=org.mockito.Mockito.mock(com.arqnova.servicios.puertos.salida.AiConversationProviderPort.class);
+        String project=UUID.randomUUID().toString();
+        org.mockito.Mockito.when(users.findByUsername("ana")).thenReturn(Optional.of(
+                com.arqnova.modelo.Usuario.builder().username("ana").habilitado(true).build()));
+        org.mockito.Mockito.when(projects.findProjectById(project)).thenReturn(Optional.of(
+                com.arqnova.modelo.entidades.ProjectEntity.builder().id(project).name("Test").build()));
+        org.mockito.Mockito.when(projects.findDiagramByProjectId(project)).thenReturn(Optional.empty());
+        org.mockito.Mockito.when(provider.answer(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new Answer("Respuesta recuperable",List.of(),"FAKE","test"));
+        org.mockito.Mockito.doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException())
+                .doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException())
+                .doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException())
+                .doCallRealMethod().when(spy).complete(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyLong());
+        var queue=new ArrayList<Runnable>();
+        var service=new com.arqnova.servicios.impl.AiConversationService(spy,provider,event->{},queue::add,projects,users,
+                java.time.Clock.systemUTC());
+        service.send(project,"ana","write-request",Mode.ASK,"Explica el modelo");
+        queue.remove(0).run();
+        assertThat(adapter.find(project,"write-request").orElseThrow().state()).isEqualTo(State.PENDING);
+        // A separate service instance represents the recovered process.
+        var restarted=new com.arqnova.servicios.impl.AiConversationService(spy,provider,event->{},queue::add,projects,users,
+                java.time.Clock.systemUTC());
+        for(int page=0;page<10 && adapter.find(project,"write-request").orElseThrow().state()==State.PENDING;page++){
+            restarted.recoverPending();
+            while(!queue.isEmpty())queue.remove(0).run();
+        }
+        assertThat(adapter.find(project,"write-request").orElseThrow().state()).isEqualTo(State.COMPLETED);
+        org.mockito.Mockito.verify(provider,org.mockito.Mockito.times(1)).answer(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+        var failedStage = org.mockito.Mockito.doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException());
+        for(int failure=1;failure<9;failure++) failedStage=failedStage.doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException());
+        failedStage.doCallRealMethod().when(spy).stage(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyLong());
+        for(int crash=0;crash<4;crash++){
+            var process=new com.arqnova.servicios.impl.AiConversationService(spy,provider,event->{},queue::add,projects,users,
+                    java.time.Clock.systemUTC());
+            process.send(project,"ana","lost-request",Mode.ASK,"Explica el modelo");
+            while(!queue.isEmpty())queue.remove(0).run();
+        }
+        var lost=adapter.find(project,"lost-request").orElseThrow();
+        assertThat(lost.state()).isEqualTo(State.FAILED);
+        assertThat(lost.errorCode()).isEqualTo("AI_RECOVERY_EXHAUSTED");
+        org.mockito.Mockito.verify(provider,org.mockito.Mockito.times(4)).answer(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException())
+                .doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException())
+                .doThrow(new com.arqnova.modelo.excepciones.AiMemoryUnavailableException())
+                .doCallRealMethod().when(spy).stage(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyLong());
+        service.send(project,"ana","buffered-request",Mode.ASK,"Explica el modelo");
+        queue.remove(0).run();
+        assertThat(adapter.find(project,"buffered-request").orElseThrow().state()).isEqualTo(State.PENDING);
+        service.send(project,"ana","buffered-request",Mode.ASK,"Explica el modelo");
+        queue.remove(0).run();
+        assertThat(adapter.find(project,"buffered-request").orElseThrow().state()).isEqualTo(State.COMPLETED);
+        org.mockito.Mockito.verify(provider,org.mockito.Mockito.times(5)).answer(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+
+        org.mockito.Mockito.when(provider.answer(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new java.net.http.HttpTimeoutException("Interrupción simulada"))
+                .thenReturn(new Answer("Reprocesada",List.of(),"FAKE","test"));
+        service.send(project,"ana","provider-request",Mode.ASK,"Explica el modelo");
+        queue.remove(0).run();
+        assertThat(adapter.find(project,"provider-request").orElseThrow().state()).isEqualTo(State.PENDING);
+        service.send(project,"ana","provider-request",Mode.ASK,"Explica el modelo");
+        queue.remove(0).run();
+        assertThat(adapter.find(project,"provider-request").orElseThrow().state()).isEqualTo(State.COMPLETED);
+
+
+    }
+
+
 }

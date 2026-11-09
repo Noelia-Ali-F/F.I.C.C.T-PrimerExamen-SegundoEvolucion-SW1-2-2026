@@ -26,6 +26,13 @@ public final class AiConversationService implements AiConversationUseCase {
             "\\b(?:si (?:conviene|te parece|crees|es necesario|hace falta)|(?:lo|la) que (?:quieras|prefieras)|"
                     + "algo(?=\\s*[.!?]*$)|o bien|tal vez|quizás|quizas|podríamos|podriamos)\\b",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final long LEASE_SECONDS = 120;
+    private static final int MAX_ATTEMPTS = 3;
+    private final String worker = UUID.randomUUID().toString();
+    private String recoveryCursor;
+    private final Map<String,Turn> resultsAwaitingPersistence = new java.util.concurrent.ConcurrentHashMap<>();
+    private String resultKey(Turn turn) { return turn.projectId() + "\u0000" + turn.requestId(); }
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AiConversationService.class);
     private final AiMemoryPort memory;
     private final AiConversationProviderPort provider;
     private final AiConversationEventsPort events;
@@ -81,24 +88,95 @@ public final class AiConversationService implements AiConversationUseCase {
         Turn turn=submission.turn();
         if(!turn.authorId().equals(user)||turn.mode()!=mode||!turn.instruction().equals(instruction.trim()))
             throw new DuplicateResourceException("Ese identificador ya corresponde a otra solicitud");
-        if(!submission.created())return expire(turn);
+        if(!submission.created()) {
+            if (turn.state() == State.PENDING && memory.durableJobs()) enqueue(turn);
+            return expire(turn);
+        }
         announce(turn);
-        try { tasks.schedule(()->process(turn)); }
-        catch(RuntimeException failure) { finish(turn.fail("AI_QUEUE_BUSY",clock.instant())); }
+        enqueue(turn);
         return turn;
     }
-    private void process(Turn turn) {
+    @Override public synchronized void recoverPending() {
+        if (!memory.enabled() || !memory.durableJobs()) return;
+        try {
+            for (var buffered : resultsAwaitingPersistence.values().stream().limit(20).toList()) {
+                if (memory.find(buffered.projectId(),buffered.requestId()).map(t -> t.state()!=State.PENDING).orElse(false)) {
+                    resultsAwaitingPersistence.remove(resultKey(buffered));
+                }
+            }
+            var page = memory.pendingJobs(recoveryCursor, 20);
+            recoveryCursor = page.nextCursor();
+            page.turns().forEach(this::enqueue);
+        } catch (RuntimeException unavailable) {
+            log.warn("Recuperación de trabajos IA temporalmente no disponible");
+        }
+    }
+
+    private void enqueue(Turn turn) {
+        try { tasks.schedule(() -> runJob(turn)); }
+        catch (RuntimeException busy) {
+            if (!memory.durableJobs()) {
+                if (memory.finish(turn.fail("AI_QUEUE_BUSY",clock.instant()))) announce(turn.fail("AI_QUEUE_BUSY",clock.instant()));
+            }
+        }
+    }
+
+    private void runJob(Turn turn) {
+        Job job = null;
+        AutoCloseable heartbeat = null;
+        var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+        try {
+            if (memory.find(turn.projectId(),turn.requestId()).map(t -> t.state()!=State.PENDING).orElse(true)) {
+                resultsAwaitingPersistence.remove(resultKey(turn));
+                return;
+            }
+            job = memory.claim(turn, worker + "-" + UUID.randomUUID(), clock.instant().getEpochSecond(),
+                    clock.instant().plusSeconds(LEASE_SECONDS).getEpochSecond()).orElse(null);
+            if (job == null) return;
+            Job claimed = job;
+            heartbeat = tasks.heartbeat(() -> {
+                try {
+                    if (!memory.renew(claimed,clock.instant().getEpochSecond(),
+                            clock.instant().plusSeconds(LEASE_SECONDS).getEpochSecond())) valid.set(false);
+                } catch (RuntimeException unavailable) { valid.set(false); }
+            });
+            process(job, valid);
+        } catch (RuntimeException unavailable) {
+            log.warn("Trabajo IA pendiente de recuperación durable");
+        } finally {
+            if (heartbeat != null) try { heartbeat.close(); } catch (Exception ignored) {}
+            if (job != null) try { memory.release(job); } catch (RuntimeException unavailable) {
+                log.warn("La reserva IA se recuperará al vencer su lease");
+            }
+        }
+    }
+
+    private boolean owns(Job job, java.util.concurrent.atomic.AtomicBoolean valid) {
+        return valid.get() && memory.renew(job,clock.instant().getEpochSecond(),
+                clock.instant().plusSeconds(LEASE_SECONDS).getEpochSecond());
+    }
+
+    private void process(Job job, java.util.concurrent.atomic.AtomicBoolean valid) {
+        Turn turn = job.turn();
         try {
             if(memory.find(turn.projectId(),turn.requestId()).map(v->v.state()!=State.PENDING).orElse(true))return;
-            if(!turn.createdAt().plusSeconds(180).isAfter(clock.instant())){expire(turn);return;}
+            if(!memory.durableJobs() && !turn.createdAt().plusSeconds(180).isAfter(clock.instant())){expire(turn);return;}
             access(turn.projectId(),turn.authorId());
             if(turn.mode()==Mode.MODEL){
                 projects.requireAccess(turn.projectId(),turn.authorId(),com.arqnova.modelo.entidades.ProjectMemberRole.OWNER,com.arqnova.modelo.entidades.ProjectMemberRole.EDITOR);
-                var applied=mutations.find(turn);if(applied.isPresent()){finish(appliedTurn(turn,applied.get()));return;}
+                var applied=mutations.find(turn);if(applied.isPresent()){finish(job,appliedTurn(turn,applied.get()));return;}
             }
             if(users.findByUsername(turn.authorId()).filter(v->!Boolean.FALSE.equals(v.getHabilitado())).isEmpty())throw new UnauthorizedActionException("Usuario deshabilitado");
+            if (job.result() != null) { finish(job,job.result()); return; }
+            var buffered = resultsAwaitingPersistence.get(resultKey(turn));
+            if (buffered != null) { finish(job,buffered); return; }
+            if (job.attempt() > MAX_ATTEMPTS) {
+                finish(job,turn.fail("AI_RECOVERY_EXHAUSTED",clock.instant()));
+                return;
+            }
+            if (!owns(job,valid)) return;
             if (turn.mode() == Mode.MODEL && !explicitModeling(turn.instruction())) {
-                finish(turn.finish(new Answer(
+                finish(job,turn.finish(new Answer(
                         "Confirma qué operación UML deseas aplicar e indica el elemento y los datos concretos. "
                         + "Para evaluar opciones, usa Consulta, Asesoramiento, Revisión o Mediación.",
                         List.of(), "LOCAL", "modeling-clarification"), clock.instant()));
@@ -109,7 +187,7 @@ public final class AiConversationService implements AiConversationUseCase {
                 String message = allowed
                         ? "Esta orden no cambió el lienzo. Usa Modificar diagrama guardado para aplicar la instrucción."
                         : "Esta orden no cambió el lienzo. Solo el propietario o un editor puede aplicarla.";
-                finish(turn.finish(new Answer(message, List.of(), "LOCAL",
+                finish(job,turn.finish(new Answer(message, List.of(), "LOCAL",
                         allowed ? "modeling-mode-required" : "modeling-permission-required"), clock.instant()));
                 return;
             }
@@ -125,22 +203,29 @@ public final class AiConversationService implements AiConversationUseCase {
             if(turn.mode()==Mode.MODEL&&!answer.operations().isEmpty()){
                 synchronized(guard(turn)){
                     var current=memory.find(turn.projectId(),turn.requestId()).orElseThrow();
-                    if(expire(current).state()!=State.PENDING)return;
+                    if(expire(current).state()!=State.PENDING || !owns(job,valid))return;
                     if(users.findByUsername(turn.authorId()).filter(v->!Boolean.FALSE.equals(v.getHabilitado())).isEmpty())throw new UnauthorizedActionException("Usuario deshabilitado");
-                    finish(appliedTurn(turn,mutations.apply(turn,context,answer)));
+                    finish(job,appliedTurn(turn,mutations.apply(turn,context,answer)));
                 }return;
             }
             // Record the model version actually reviewed, which may have advanced while the job waited.
             var reviewed=new Turn(turn.requestId(),turn.projectId(),turn.authorId(),turn.authorName(),turn.mode(),turn.instruction(),turn.state(),null,null,
                     context.diagramVersion(),turn.createdAt(),turn.updatedAt());
-            finish(reviewed.finish(answer,clock.instant()));
+            finish(job,reviewed.finish(answer,clock.instant()));
         } catch(Exception error) {
-            if(turn.mode()==Mode.MODEL){var applied=mutations.find(turn);if(applied.isPresent()){finish(appliedTurn(turn,applied.get()));return;}}
+            if (error instanceof AiMemoryUnavailableException) throw (AiMemoryUnavailableException) error;
+            if(turn.mode()==Mode.MODEL){var applied=mutations.find(turn);if(applied.isPresent()){finish(job,appliedTurn(turn,applied.get()));return;}}
+            if (memory.durableJobs() && (Thread.currentThread().isInterrupted()
+                    || error instanceof java.io.IOException || error instanceof InterruptedException
+                    || (error instanceof AiProviderException provider && provider.httpStatus >= 500))) {
+                log.warn("Proveedor IA interrumpido; trabajo pendiente de reintento acotado");
+                return;
+            }
             String code=error instanceof AiProviderException p&&p.httpStatus==429?"AI_RATE_LIMITED":error instanceof UnauthorizedActionException?"ACCESS_CHANGED":
                     error instanceof DuplicateResourceException?"AI_MODEL_CONFLICT":
                     error instanceof IllegalArgumentException&&"AI_CONTEXT_TOO_LARGE".equals(error.getMessage())?"AI_CONTEXT_TOO_LARGE":
                     turn.mode()==Mode.MODEL&&error instanceof IllegalArgumentException?"AI_INVALID_OPERATIONS":"AI_PROVIDER_UNAVAILABLE";
-            finish(turn.fail(code,clock.instant()));
+            finish(job,turn.fail(code,clock.instant()));
         }
     }
     private boolean explicitModeling(String instruction) {
@@ -156,16 +241,40 @@ public final class AiConversationService implements AiConversationUseCase {
     private Turn expireLocked(Turn turn) {
         if(turn.state()==State.PENDING&&turn.mode()==Mode.MODEL&&mutations!=null){
             var applied=mutations.find(turn);if(applied.isPresent()){
-                Turn recovered=appliedTurn(turn,applied.get());if(memory.finish(recovered))announce(recovered);
+                Turn recovered=appliedTurn(turn,applied.get());if(memory.finish(recovered)){
+                    resultsAwaitingPersistence.remove(resultKey(recovered));announce(recovered);
+                }
                 return memory.find(turn.projectId(),turn.requestId()).orElse(recovered);
             }
+        }
+        if (memory.durableJobs() && turn.state() == State.PENDING) {
+            memory.ensurePending(turn);
+            return turn;
         }
         if(turn.state()!=State.PENDING||turn.createdAt().plusSeconds(180).isAfter(clock.instant()))return turn;
         Turn expired=turn.fail("AI_REQUEST_INTERRUPTED",clock.instant());
         if(memory.finish(expired)){announce(expired);return expired;}
         return memory.find(turn.projectId(),turn.requestId()).orElse(turn);
     }
-    private void finish(Turn turn) { if(memory.finish(turn))announce(turn); }
+    private void finish(Job job, Turn result) {
+        resultsAwaitingPersistence.put(resultKey(result),result);
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                if (!memory.stage(job,result,clock.instant().getEpochSecond())) return;
+                if (memory.complete(job,result,clock.instant().getEpochSecond())) {
+                    resultsAwaitingPersistence.remove(resultKey(result));
+                    announce(result);
+                } else if (memory.find(result.projectId(),result.requestId()).map(t -> t.state()!=State.PENDING).orElse(false)) {
+                    resultsAwaitingPersistence.remove(resultKey(result));
+                }
+                return;
+            } catch (AiMemoryUnavailableException temporary) {
+                if (attempt == 2) throw temporary;
+                try { Thread.sleep(100L * (attempt + 1)); }
+                catch (InterruptedException stopped) { Thread.currentThread().interrupt(); throw temporary; }
+            }
+        }
+    }
     private Turn appliedTurn(Turn turn,AiModelMutationPort.Applied applied){return new Turn(turn.requestId(),turn.projectId(),turn.authorId(),turn.authorName(),turn.mode(),turn.instruction(),State.COMPLETED,applied.answer(),null,applied.diagramVersion(),turn.createdAt(),clock.instant());}
     private void announce(Turn turn) {
         try { events.changed(new Change(turn.projectId(),turn.requestId(),turn.state(),turn.mode(),turn.diagramVersion())); }

@@ -2,6 +2,7 @@ package com.arqnova.servicios.puertos.entrada;
 import com.arqnova.modelo.ia.AiConversation.*;
 public interface AiConversationUseCase {
     boolean enabled();
+    default void recoverPending() {}
     default boolean modelingEnabled(){return false;}
     boolean canModel(String projectId, String username);
     Page history(String projectId, String username, String cursor, int limit);

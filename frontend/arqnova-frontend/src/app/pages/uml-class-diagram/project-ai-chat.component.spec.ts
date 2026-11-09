@@ -1,15 +1,17 @@
+import { AuthService } from '../../auth/auth.service';
 import { TestBed } from '@angular/core/testing';
-import { describe,it,expect,vi,afterEach } from 'vitest';
-import { of,Subject,throwError } from 'rxjs';
+import { describe,it,expect,vi,afterEach,beforeEach } from 'vitest';
+import { of,Subject,throwError,Observable } from 'rxjs';
 import { ProjectAiChatComponent } from './project-ai-chat.component';
 import { AiConversationChange, AiConversationPage, AiTurn } from '../../domain/uml/ai-conversation.models';
 import { AiConversationService } from './ai-conversation.service';
 describe('panel de conversación del proyecto',()=>{
+ beforeEach(()=>localStorage.clear());
  afterEach(()=>TestBed.resetTestingModule());
- function setup(enabled=true,modes:string[]=['ASK','REVIEW'],initial:AiConversationPage={turns:[],nextCursor:null}){
+ function setup(enabled=true,modes:string[]=['ASK','REVIEW'],initial:AiConversationPage={turns:[],nextCursor:null},user='ana',restored?:AiTurn){
   const changes = new Subject<AiConversationChange>();
-  const service={status:vi.fn(()=>of({enabled,modes})),history:vi.fn((_project:string,_cursor?:string)=>of(initial)),watch:vi.fn(()=>changes),get:vi.fn(),send:vi.fn(()=>throwError(()=>new Error('network')))};
-  TestBed.configureTestingModule({imports:[ProjectAiChatComponent],providers:[{provide:AiConversationService,useValue:service}]});
+  const service={status:vi.fn(()=>of({enabled,modes})),history:vi.fn((_project:string,_cursor?:string)=>of(initial)),watch:vi.fn(()=>changes),get:vi.fn((_p:string,_id:string):Observable<AiTurn>=>restored?of(restored):throwError(()=>({status:404}))),send:vi.fn(()=>throwError(()=>new Error('network')))};
+  TestBed.configureTestingModule({imports:[ProjectAiChatComponent],providers:[{provide:AiConversationService,useValue:service},{provide:AuthService,useValue:{currentUser:()=>({username:user})}}]});
   const fixture=TestBed.createComponent(ProjectAiChatComponent);fixture.componentRef.setInput('projectId','p');fixture.detectChanges();return{fixture,service,changes,component:fixture.componentInstance};
  }
  it('mantiene disponible el editor cuando el módulo nuevo está apagado',()=>{
@@ -119,6 +121,50 @@ describe('panel de conversación del proyecto',()=>{
   expect(service.send).not.toHaveBeenCalled();
   component.prepareModeling('Otra instrucción');
   expect(component.instruction).toBe('Agrega NotaVenta a Venta');
+ });
+ it('recupera el ID no confirmado tras recargar y lo reutiliza si todavía no existe en servidor',()=>{
+  const first=setup();first.component.instruction='Pregunta pendiente';first.component.send();
+  const id=(first.service.send.mock.calls[0] as unknown[])[1];
+  first.fixture.destroy();TestBed.resetTestingModule();
+  const second=setup();
+  expect(second.component.instruction).toBe('Pregunta pendiente');
+  expect(second.service.get).toHaveBeenCalledWith('p',id);
+  second.component.send();
+  expect(second.service.send).toHaveBeenCalledWith('p',id,'ASK','Pregunta pendiente');
+ });
+ it('reconcilia el envío aceptado aunque se haya perdido su confirmación HTTP',()=>{
+  const first=setup();first.component.instruction='Pregunta pendiente';first.component.send();
+  const id=(first.service.send.mock.calls[0] as unknown[])[1] as string;
+  first.fixture.destroy();TestBed.resetTestingModule();
+  const restored={...turn(id,11),authorId:'ana',instruction:'Pregunta pendiente'};
+  const second=setup(true,['ASK'],{turns:[],nextCursor:null},'ana',restored);
+  expect(second.component.instruction).toBe('');
+  expect(second.component.turns()).toContainEqual(restored);
+  expect(second.service.send).not.toHaveBeenCalled();
+  expect(localStorage.getItem('arqnova-ai-unconfirmed-v1:ana:p')).toBeNull();
+ });
+ it('aisla los envíos locales por usuario y proyecto',()=>{
+  localStorage.setItem('arqnova-ai-unconfirmed-v1:otra:p',JSON.stringify([{requestId:'request-other',mode:'ASK',instruction:'Privado'}]));
+  localStorage.setItem('arqnova-ai-unconfirmed-v1:ana:otro',JSON.stringify([{requestId:'request-other',mode:'ASK',instruction:'Otro proyecto'}]));
+  const {component,service}=setup();
+  expect(component.instruction).toBe('');
+  expect(service.get).not.toHaveBeenCalled();
+ });
+ it('muestra el fallo de sondeo y permite recuperar la conversación',()=>{
+  vi.useFakeTimers();
+  try {
+   const {component,service,fixture}=setup();
+   const pending={...turn('pending-request',11),state:'PENDING' as const,authorId:'ana'};
+   component.turns.set([pending]);
+   service.get.mockReturnValue(throwError(()=>new Error('sin conexión')));
+   vi.advanceTimersByTime(4000);
+   fixture.detectChanges();
+   expect(component.error()).toContain('desactualizado');
+   expect(fixture.nativeElement.textContent).toContain('Recuperar conversación');
+   component.recover();
+   expect(service.history).toHaveBeenCalledTimes(2);
+   fixture.destroy();
+  } finally {vi.useRealTimers();}
  });
  it('muestra un conflicto sin afirmar que el diagrama fue modificado',()=>{
   const {component}=setup();expect(component.failureText('AI_MODEL_CONFLICT')).toContain('El diagrama cambió');

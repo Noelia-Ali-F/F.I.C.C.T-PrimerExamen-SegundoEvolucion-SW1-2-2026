@@ -55,5 +55,23 @@ public class AiMemoryConfiguration {
             Thread worker=new Thread(task,"arqnova-ai-conversation");worker.setDaemon(true);return worker;
         },new ThreadPoolExecutor.AbortPolicy());
     }
-    @Bean AiTaskPort aiTaskPort(ThreadPoolExecutor aiConversationExecutor){return aiConversationExecutor::execute;}
+    @Bean(destroyMethod="shutdownNow") ScheduledExecutorService aiRecoveryScheduler() {
+        return Executors.newScheduledThreadPool(2, task -> {
+            Thread thread = new Thread(task,"arqnova-ai-recovery");thread.setDaemon(true);return thread;
+        });
+    }
+    @Bean AiTaskPort aiTaskPort(ThreadPoolExecutor aiConversationExecutor, ScheduledExecutorService aiRecoveryScheduler) {
+        return new AiTaskPort() {
+            public void schedule(Runnable task) { aiConversationExecutor.execute(task); }
+            public AutoCloseable heartbeat(Runnable renewal) {
+                var future = aiRecoveryScheduler.scheduleAtFixedRate(renewal,20,20,TimeUnit.SECONDS);
+                return () -> future.cancel(false);
+            }
+        };
+    }
+    @Bean AutoCloseable aiRecoveryLoop(ScheduledExecutorService aiRecoveryScheduler,
+            com.arqnova.servicios.puertos.entrada.AiConversationUseCase service) {
+        var future = aiRecoveryScheduler.scheduleWithFixedDelay(service::recoverPending,5,15,TimeUnit.SECONDS);
+        return () -> future.cancel(false);
+    }
 }

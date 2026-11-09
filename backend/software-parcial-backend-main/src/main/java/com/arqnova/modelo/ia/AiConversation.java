@@ -38,6 +38,8 @@ public final class AiConversation {
             this(projectId, projectName, authorId, diagram, diagramVersion, groupHistory, userHistory, List.of(), List.of());
         }
     }
+    public record Job(Turn turn, String owner, int attempt, Turn result) {}
+    public record JobPage(List<Turn> turns, String nextCursor) {}
     public record Submission(Turn turn, boolean created) {}
     public record Change(String projectId, String requestId, State state,Mode mode,int diagramVersion) {
         public Change(String projectId,String requestId,State state){this(projectId,requestId,state,null,0);}
