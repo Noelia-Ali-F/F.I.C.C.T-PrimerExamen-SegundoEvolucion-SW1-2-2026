@@ -43,6 +43,25 @@ describe('UmlClassDiagramComponent', () => {
     (component as any).watchTeamModeling();events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
     expect(get).toHaveBeenCalledTimes(1);expect(component.model().title).toBe('Modelo remoto');expect(save).not.toHaveBeenCalled();
   });
+  it('refleja la multiplicidad guardada en el lienzo y omite una confirmación repetida', () => {
+    const initial = DEFAULT_UML_MODEL;
+    const updated = { ...initial, relations: initial.relations.map((relation, index) =>
+      index === 0 ? { ...relation, sourceMultiplicity: '0..1', targetMultiplicity: '1..*' } : relation) };
+    component.model.set(initial);
+    fixture.detectChanges();
+    const get = vi.spyOn(TestBed.inject(UmlProjectStoreService), 'get').mockReturnValue(of({
+      id: 'project-test', name: initial.title, description: '', status: 'EN_EDICION',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), model: updated, modelVersion: 85
+    }));
+
+    component.syncTeamModel(85);
+    fixture.detectChanges();
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('g.relation:first-of-type .multiplicity') as NodeListOf<SVGTextElement>);
+    expect(labels.slice(0, 2).map(label => label.textContent)).toEqual(['0..1', '1..*']);
+    component.syncTeamModel(85);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['pendiente','fallida'])('conserva una edición local %s al recibir una modificación de IA del equipo', state => {
     const events=new Subject<any>();
     (component as any).teamAi={status:()=>of({enabled:true,modes:['MODEL']}),watch:()=>events};

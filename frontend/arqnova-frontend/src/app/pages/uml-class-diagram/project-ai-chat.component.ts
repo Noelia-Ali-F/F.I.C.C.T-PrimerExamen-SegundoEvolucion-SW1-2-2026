@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component,Input,OnInit,OnDestroy,inject,signal } from '@angular/core';
+import { Component,Input,OnInit,OnDestroy,inject,output,signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { AiConversationService } from './ai-conversation.service';
@@ -43,6 +43,7 @@ import { mergeAiTurns } from '../../application/ai-conversation.use-cases';
 })
 export class ProjectAiChatComponent implements OnInit,OnDestroy {
   @Input({required:true})projectId='';
+  readonly modelCompleted = output<number>();
   private readonly service=inject(AiConversationService);
   private subscriptions=new Subscription();private poll?:ReturnType<typeof setInterval>;private refreshing=false;private refreshAgain=false;private historyLoaded=false;
   private loadingTurns=new Set<string>();
@@ -55,21 +56,27 @@ export class ProjectAiChatComponent implements OnInit,OnDestroy {
     this.poll=setInterval(()=>this.turns().filter(t=>t.state==='PENDING').slice(0,4).forEach(turn=>this.loadTurn(turn.requestId)),4000);
   },error:()=>{this.loading.set(false);this.error.set('No se pudo conectar con la conversación compartida.');}}));}
   ngOnDestroy(){this.subscriptions.unsubscribe();if(this.poll)clearInterval(this.poll);}
+  private acceptTurns(incoming: AiTurn[]) {
+    this.turns.update(turns => mergeAiTurns(turns, incoming));
+    const version = incoming.reduce((latest, turn) =>
+      turn.mode === 'MODEL' && turn.state === 'COMPLETED' ? Math.max(latest, turn.diagramVersion) : latest, 0);
+    if (version > 0) this.modelCompleted.emit(version);
+  }
   private loadTurn(id:string){if(this.loadingTurns.has(id))return;this.loadingTurns.add(id);this.subscriptions.add(this.service.get(this.projectId,id).subscribe({next:turn=>{
-    this.turns.update(turns=>mergeAiTurns(turns,[turn]));this.loadingTurns.delete(id);
+    this.acceptTurns([turn]);this.loadingTurns.delete(id);
   },error:()=>this.loadingTurns.delete(id)}));}
   refresh(){if(this.refreshing){this.refreshAgain=true;return;}this.refreshing=true;this.subscriptions.add(this.service.history(this.projectId).subscribe({next:page=>{
-    this.turns.update(turns=>mergeAiTurns(turns,page.turns));if(!this.historyLoaded){this.cursor.set(page.nextCursor);this.historyLoaded=true;}this.refreshing=false;this.error.set('');
+    this.acceptTurns(page.turns);if(!this.historyLoaded){this.cursor.set(page.nextCursor);this.historyLoaded=true;}this.refreshing=false;this.error.set('');
     if(this.refreshAgain){this.refreshAgain=false;this.refresh();}
   },error:()=>{this.refreshing=false;this.refreshAgain=false;this.error.set('No se pudo recuperar el historial. Se conservaron los mensajes visibles.');}}));}
   loadOlder(){const cursor=this.cursor();if(!cursor||this.loadingOlder())return;this.loadingOlder.set(true);this.subscriptions.add(this.service.history(this.projectId,cursor).subscribe({next:page=>{
-    this.turns.update(turns=>mergeAiTurns(turns,page.turns));this.cursor.set(page.nextCursor);this.loadingOlder.set(false);
+    this.acceptTurns(page.turns);this.cursor.set(page.nextCursor);this.loadingOlder.set(false);
   },error:()=>{this.loadingOlder.set(false);this.error.set('No se pudieron cargar mensajes anteriores.');}}));}
   send(){if(this.sending()||!this.instruction.trim())return;this.sending.set(true);this.error.set('');
     const content=JSON.stringify([this.mode,this.instruction.trim()]);
     if(!this.requestId||this.requestContent!==content){this.requestId=crypto.randomUUID();this.requestContent=content;}const id=this.requestId;
     this.subscriptions.add(this.service.send(this.projectId,id,this.mode,this.instruction).subscribe({next:turn=>{
-      this.turns.update(turns=>mergeAiTurns(turns,[turn]));if(JSON.stringify([this.mode,this.instruction.trim()])===content)this.instruction='';this.requestId=null;this.sending.set(false);this.refresh();
+      this.acceptTurns([turn]);if(JSON.stringify([this.mode,this.instruction.trim()])===content)this.instruction='';this.requestId=null;this.sending.set(false);this.refresh();
     },error:()=>{this.sending.set(false);this.error.set('No se confirmó el envío. Vuelve a enviar el mismo mensaje para comprobarlo sin duplicarlo.');}}));
   }
   failureText(code:string|null){switch(code){case'AI_MODEL_CONFLICT':return'El diagrama cambió o un elemento está en edición. Revisa la versión guardada antes de enviar otra solicitud.';case'AI_INVALID_OPERATIONS':return'La solicitud no produjo un lote UML válido. No se aplicaron cambios.';case'AI_CONTEXT_TOO_LARGE':return'El diagrama supera el contexto permitido para esta consulta. El modelo guardado se conserva.';case'AI_RATE_LIMITED':return'La IA alcanzó temporalmente su cuota. Intenta una nueva consulta más tarde.';case'AI_REQUEST_INTERRUPTED':return'La solicitud se interrumpió. Puedes enviar una nueva consulta.';case'AI_QUEUE_BUSY':return'Hay varias solicitudes en espera. Intenta más tarde.';case'ACCESS_CHANGED':return'El acceso al proyecto cambió durante la solicitud.';default:return'El proveedor de IA no pudo completar esta respuesta. El diagrama no fue modificado.';}}

@@ -2,11 +2,12 @@ import { TestBed } from '@angular/core/testing';
 import { describe,it,expect,vi,afterEach } from 'vitest';
 import { of,Subject,throwError } from 'rxjs';
 import { ProjectAiChatComponent } from './project-ai-chat.component';
+import { AiTurn } from '../../domain/uml/ai-conversation.models';
 import { AiConversationService } from './ai-conversation.service';
 describe('panel de conversación del proyecto',()=>{
  afterEach(()=>TestBed.resetTestingModule());
  function setup(enabled=true,modes:string[]=['ASK','REVIEW']){
-  const service={status:vi.fn(()=>of({enabled,modes})),history:vi.fn(()=>of({turns:[],nextCursor:null})),watch:vi.fn(()=>new Subject()),send:vi.fn(()=>throwError(()=>new Error('network')))};
+  const service={status:vi.fn(()=>of({enabled,modes})),history:vi.fn(()=>of({turns:[],nextCursor:null})),watch:vi.fn(()=>new Subject()),get:vi.fn(),send:vi.fn(()=>throwError(()=>new Error('network')))};
   TestBed.configureTestingModule({imports:[ProjectAiChatComponent],providers:[{provide:AiConversationService,useValue:service}]});
   const fixture=TestBed.createComponent(ProjectAiChatComponent);fixture.componentRef.setInput('projectId','p');fixture.detectChanges();return{fixture,service,component:fixture.componentInstance};
  }
@@ -40,6 +41,23 @@ describe('panel de conversación del proyecto',()=>{
   const {fixture,component}=setup(true,['ASK','REVIEW','MODEL']);
   expect(fixture.nativeElement.textContent).toContain('Modificar diagrama guardado');
   component.mode='MODEL';fixture.changeDetectorRef.markForCheck();fixture.detectChanges();expect(fixture.nativeElement.textContent).toContain('para todo el equipo');
+ });
+ it('avisa al lienzo cuando el sondeo confirma el modelado sin evento WebSocket',()=>{
+  vi.useFakeTimers();
+  try {
+   const {component,service,fixture}=setup(true,['MODEL']);
+   const pending: AiTurn={requestId:'request-model',projectId:'p',authorId:'u',authorName:'Usuario',
+    mode:'MODEL',instruction:'Cambia la multiplicidad',state:'PENDING',answer:null,errorCode:null,
+    diagramVersion:0,createdAt:'2026-11-09T10:00:00Z',updatedAt:'2026-11-09T10:00:00Z'};
+   service.send.mockReturnValue(of(pending) as any);
+   service.get.mockReturnValue(of({...pending,state:'COMPLETED',diagramVersion:85}));
+   const completed=vi.fn();component.modelCompleted.subscribe(completed);
+   component.mode='MODEL';component.instruction=pending.instruction;component.send();
+   expect(completed).not.toHaveBeenCalled();
+   vi.advanceTimersByTime(4000);
+   expect(completed).toHaveBeenCalledExactlyOnceWith(85);
+   fixture.destroy();
+  } finally {vi.useRealTimers();}
  });
  it('muestra un conflicto sin afirmar que el diagrama fue modificado',()=>{
   const {component}=setup();expect(component.failureText('AI_MODEL_CONFLICT')).toContain('El diagrama cambió');

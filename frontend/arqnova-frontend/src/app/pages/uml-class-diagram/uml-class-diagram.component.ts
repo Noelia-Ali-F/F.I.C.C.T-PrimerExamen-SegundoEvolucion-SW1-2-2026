@@ -31,6 +31,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
   private readonly teamAiSubscriptions = new Subscription();
   private teamAiWatching = false;
   private canonicalRefreshing = false;
+  private canonicalModelVersion = 0;
   private localModelDirty = false;
   private canonicalRefreshAgain = false;
   private readonly backendGenerator = inject(UmlBackendGeneratorService);
@@ -170,6 +171,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.projectStore.get(this.projectId).subscribe({
       next: project => {
         this.model.set(this.normalizeModel(project.model));
+        this.canonicalModelVersion = project.modelVersion ?? 0;
         this.lastSavedAt.set(new Date(project.updatedAt));
         this.status.set('Proyecto cargado desde PostgreSQL');
         this.watchTeamModeling();
@@ -531,9 +533,13 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.teamAiSubscriptions.add(this.teamAi.status(this.projectId).subscribe({next:status=>{
       if(!status.enabled||!status.modes?.includes('MODEL'))return;
       this.teamAiSubscriptions.add(this.teamAi.watch(this.projectId).subscribe(change=>{
-        if(change.state==='CONNECTED'||(change.mode==='MODEL'&&change.state==='COMPLETED'))this.refreshCanonicalModel();
+        if(change.state==='CONNECTED')this.refreshCanonicalModel();
+        if(change.mode==='MODEL'&&change.state==='COMPLETED')this.syncTeamModel(change.diagramVersion);
       }));
     },error:()=>{}}));
+  }
+  syncTeamModel(version?: number) {
+    if (version === undefined || version > this.canonicalModelVersion) this.refreshCanonicalModel();
   }
   private refreshCanonicalModel(){
     if(this.canonicalRefreshing){this.canonicalRefreshAgain=true;return;}
@@ -542,7 +548,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.canonicalRefreshing=true;
     this.teamAiSubscriptions.add(this.projectStore.get(this.projectId,clean).subscribe({next:project=>{
       this.canonicalRefreshing=false;
-      if(clean()){this.model.set(this.normalizeModel(project.model));this.lastSavedAt.set(new Date(project.updatedAt));this.status.set('Diagrama sincronizado con el equipo');}
+      if(clean()){this.canonicalModelVersion=project.modelVersion??0;this.model.set(this.normalizeModel(project.model));this.lastSavedAt.set(new Date(project.updatedAt));this.status.set('Diagrama sincronizado con el equipo');}
       else this.status.set('Hay cambios del equipo. Tu edición local se conserva; recarga antes de guardar.');
       if(this.canonicalRefreshAgain){this.canonicalRefreshAgain=false;this.refreshCanonicalModel();}
     },error:()=>{this.canonicalRefreshing=false;this.canonicalRefreshAgain=false;this.status.set('No se pudo recuperar el diagrama actualizado. Tu copia local se conserva.');}}));
@@ -560,6 +566,7 @@ export class UmlClassDiagramComponent implements OnDestroy {
     this.status.set('Guardando en PostgreSQL...');
     this.projectStore.saveModel(this.projectId, this.model()).subscribe({
       next: project => {
+        this.canonicalModelVersion = project.modelVersion ?? 0;
         this.lastSavedAt.set(new Date(project.updatedAt));
         this.status.set(message);
         this.localModelDirty = this.pendingSaveMessage !== null;

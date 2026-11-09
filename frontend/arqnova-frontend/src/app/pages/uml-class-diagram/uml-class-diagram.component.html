@@ -71,7 +71,7 @@
     <header><div><span class="ai-symbol"><mat-icon>auto_awesome</mat-icon></span><div><h2>Asistente IA</h2><p>Edita elementos puntuales del diagrama</p></div></div><button type="button" aria-label="Cerrar asistente" (click)="aiPanelOpen.set(false)"><mat-icon>close</mat-icon></button></header>
     <div class="ai-tabs"><button type="button" [class.active]="aiWorkspace()==='edit'" (click)="aiWorkspace.set('edit')">Editar diagrama</button><button type="button" [class.active]="aiWorkspace()==='team'" (click)="aiWorkspace.set('team')">Chat de equipo</button></div>
     @if(aiWorkspace()==='team'){
-      <app-project-ai-chat [projectId]="projectId" />
+      <app-project-ai-chat [projectId]="projectId" (modelCompleted)="syncTeamModel($event)" />
     }@else{
     <div class="ai-tabs"><button type="button" [class.active]="aiMode()==='text'" (click)="setAiMode('text')"><mat-icon>chat_bubble_outline</mat-icon>Texto</button><button type="button" [class.active]="aiMode()==='voice'" (click)="setAiMode('voice')"><mat-icon>mic_none</mat-icon>Voz</button></div>
     <div class="ai-body">
