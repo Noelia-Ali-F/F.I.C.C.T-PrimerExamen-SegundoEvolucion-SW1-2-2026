@@ -1,0 +1,12 @@
+# Optional override for a LOCAL clone. This file is not used by the AWS deployment.
+services:
+  backend:
+    environment:
+      PUSH_NOTIFICATIONS_ENABLED: "true"
+      FIREBASE_PROJECT_ID: arqnova-segundo-examen
+      FIREBASE_CREDENTIALS_FILE: /run/secrets/firebase-service-account.json
+    volumes:
+      - type: bind
+        source: ${FIREBASE_CREDENTIALS_HOST_FILE:?Set the absolute path to your local Firebase service-account file}
+        target: /run/secrets/firebase-service-account.json
+        read_only: true

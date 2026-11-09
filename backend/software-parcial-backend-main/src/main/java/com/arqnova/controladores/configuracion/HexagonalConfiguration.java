@@ -10,6 +10,9 @@ import org.springframework.transaction.interceptor.TransactionProxyFactoryBean;
 import java.util.Properties;
 @Configuration
 public class HexagonalConfiguration {
+ @Bean com.arqnova.servicios.puertos.entrada.ProjectPushUseCase projectPush(PushDevicePort devices,PushDeliveryPort delivery,PushTaskPort tasks,com.arqnova.servicios.puertos.entrada.UserQueryUseCase users){return new ProjectPushService(devices,delivery,tasks,users);}
+ @Bean com.arqnova.servicios.puertos.entrada.ProjectActivityUseCase projectActivity(com.arqnova.servicios.puertos.entrada.ProjectUseCase projects,UmlCollaborationActivityDataPort activities){return new ProjectActivityService(projects,activities,java.time.ZoneId.systemDefault());}
+ @Bean com.arqnova.servicios.puertos.entrada.AiConversationUseCase aiConversation(AiMemoryPort memory,AiConversationProviderPort provider,AiConversationEventsPort events,AiTaskPort tasks,com.arqnova.servicios.puertos.entrada.ProjectUseCase projects,com.arqnova.servicios.puertos.entrada.UserQueryUseCase users,AiModelMutationPort mutations){return new AiConversationService(memory,provider,events,tasks,projects,users,java.time.Clock.systemUTC(),mutations);}
  @Bean com.arqnova.servicios.puertos.entrada.TokenValidationUseCase tokenValidation(AuthTokenPort tokens){return new TokenValidationService(tokens);}
  @Bean com.arqnova.servicios.puertos.entrada.AvatarQueryUseCase avatarQuery(AvatarStoragePort avatars){return new AvatarQueryService(avatars);}
  @Bean AuthService authService(UserStore users,AuthTokenPort tokens,PasswordPort passwords){return new AuthServiceImpl(users,tokens,passwords);}
@@ -18,16 +21,16 @@ public class HexagonalConfiguration {
  @Bean UsuarioConsultaService usuarioConsultaService(UserStore users){return new UsuarioConsultaService(users);}
  @Bean CodigoSeguimientoGenerator codigoSeguimientoGenerator(){return new CodigoSeguimientoGenerator();}
  @Bean UmlElementLockService umlElementLockService(Environment env){return new UmlElementLockService(env.getProperty("uml.collaboration.lock-ttl-ms",Long.class,45000L));}
- @Bean UmlAiCommandService umlAiCommandService(UmlInterpretationPort ai){return new UmlAiCommandServiceImpl(ai);}
+ @Bean @org.springframework.context.annotation.Primary UmlAiCommandService umlAiCommandService(UmlInterpretationPort ai){return new UmlAiCommandServiceImpl(ai);}
  @Bean com.arqnova.servicios.puertos.entrada.UmlImageAnalysisUseCase umlImageAnalysis(UmlInterpretationPort ai){return new UmlImageAnalysisService(ai);}
  @Bean UmlBackendGeneratorService umlBackendGeneratorService(BackendGenerationPort output){return new UmlBackendGeneratorServiceImpl(output);}
  @Bean UmlFlutterGeneratorService umlFlutterGeneratorService(FlutterGenerationPort output){return new UmlFlutterGeneratorServiceImpl(output);}
- @Bean UmlCollaborationService umlCollaborationService(GraphDataPort graph,CollaborationSessionStore sessions,UmlProjectPersistenceService projects,UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions,Environment environment){
+ @Bean UmlCollaborationService umlCollaborationService(GraphDataPort graph,CollaborationSessionStore sessions,UmlProjectPersistenceService projects,UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities,PlatformTransactionManager transactions,Environment environment,com.arqnova.servicios.puertos.entrada.ProjectPushUseCase push){
   Properties policies=new Properties();
   policies.setProperty("apply","PROPAGATION_REQUIRED");
   policies.setProperty("recordActivity","PROPAGATION_REQUIRED");
   policies.setProperty("activities","PROPAGATION_REQUIRED,readOnly");
-  UmlCollaborationService service=transactional(new UmlCollaborationService(graph,sessions,projects,diagrams,activities),transactions,policies);
+  UmlCollaborationService service=transactional(new UmlCollaborationService(graph,sessions,projects,diagrams,activities,push),transactions,policies);
   if(!environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dynamodb")))return service;
   // Keep the existing in-process collaboration serialization through the commit itself.
   // Otherwise the next WebSocket event can read an old revision after apply returns but before commit.

@@ -5,6 +5,7 @@ import '../core/composition/mobile_dependencies.dart';
 import '../features/local_assistant/presentation/assistant_page.dart';
 import '../features/offline_sync/presentation/sync_controller.dart';
 import '../features/offline_sync/presentation/pending_operations_page.dart';
+import '../features/project_viewer/presentation/project_explorer_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -130,6 +131,28 @@ class _HomePageState extends State<HomePage> {
                                       label: Text(
                                         'Operaciones pendientes '
                                         '(${_syncService.pendingCount})',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.tonalIcon(
+                                      onPressed:
+                                          () => Navigator.of(context).push(
+                                            MaterialPageRoute<void>(
+                                              builder:
+                                                  (_) => ProjectExplorerPage(
+                                                    useCases:
+                                                        MobileDependencies.createProjectViewer(),
+                                                  ),
+                                            ),
+                                          ),
+                                      icon: const Icon(
+                                        Icons.account_tree_outlined,
+                                      ),
+                                      label: const Text(
+                                        'Ver mis proyectos UML',
                                       ),
                                     ),
                                   ),

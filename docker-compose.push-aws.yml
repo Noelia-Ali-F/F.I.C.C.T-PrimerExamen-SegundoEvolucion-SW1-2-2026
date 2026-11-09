@@ -1,0 +1,13 @@
+# Optional AWS push extension. Runtime credential stays outside Git.
+# Apply after the second-exam and versioned chat image overrides.
+services:
+  backend:
+    environment:
+      PUSH_NOTIFICATIONS_ENABLED: "true"
+      FIREBASE_PROJECT_ID: arqnova-segundo-examen
+      FIREBASE_CREDENTIALS_FILE: /run/secrets/firebase-service-account.json
+    volumes:
+      - type: bind
+        source: /home/ubuntu/.config/arqnova/firebase-service-account.json
+        target: /run/secrets/firebase-service-account.json
+        read_only: true

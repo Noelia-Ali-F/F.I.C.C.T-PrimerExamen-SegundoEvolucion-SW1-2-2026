@@ -33,6 +33,44 @@ describe('UmlClassDiagramComponent', () => {
     component.model.set({ format: 'uml-class-diagram', version: 2, title: 'Prueba', classes: [], relations: [] });
   });
 
+  it('recupera el modelo aplicado por IA sin volver a guardar ni ejecutar sus operaciones', () => {
+    const events=new Subject<any>();
+    (component as any).teamAi={status:()=>of({enabled:true,modes:['ASK','REVIEW','MODEL']}),watch:()=>events};
+    const store=TestBed.inject(UmlProjectStoreService);
+    const remote={...DEFAULT_UML_MODEL,title:'Modelo remoto',classes:[]};
+    const get=vi.spyOn(store,'get').mockReturnValue(of({id:'project-test',name:'Modelo remoto',description:'',status:'EN_EDICION',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),model:remote,modelVersion:2}));
+    const save=vi.spyOn(store,'saveModel');
+    (component as any).watchTeamModeling();events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
+    expect(get).toHaveBeenCalledTimes(1);expect(component.model().title).toBe('Modelo remoto');expect(save).not.toHaveBeenCalled();
+  });
+  it('refleja la multiplicidad guardada en el lienzo y omite una confirmación repetida', () => {
+    const initial = DEFAULT_UML_MODEL;
+    const updated = { ...initial, relations: initial.relations.map((relation, index) =>
+      index === 0 ? { ...relation, sourceMultiplicity: '0..1', targetMultiplicity: '1..*' } : relation) };
+    component.model.set(initial);
+    fixture.detectChanges();
+    const get = vi.spyOn(TestBed.inject(UmlProjectStoreService), 'get').mockReturnValue(of({
+      id: 'project-test', name: initial.title, description: '', status: 'EN_EDICION',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), model: updated, modelVersion: 85
+    }));
+
+    component.syncTeamModel(85);
+    fixture.detectChanges();
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('g.relation:first-of-type .multiplicity') as NodeListOf<SVGTextElement>);
+    expect(labels.slice(0, 2).map(label => label.textContent)).toEqual(['0..1', '1..*']);
+    component.syncTeamModel(85);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['pendiente','fallida'])('conserva una edición local %s al recibir una modificación de IA del equipo', state => {
+    const events=new Subject<any>();
+    (component as any).teamAi={status:()=>of({enabled:true,modes:['MODEL']}),watch:()=>events};
+    const get=vi.spyOn(TestBed.inject(UmlProjectStoreService),'get');const original=component.model();
+    if(state==='pendiente')(component as any).pendingSaveMessage='Edición local';else (component as any).localModelDirty=true;
+    (component as any).watchTeamModeling();
+    events.next({state:'COMPLETED',mode:'MODEL',diagramVersion:2});
+    expect(get).not.toHaveBeenCalled();expect(component.model()).toBe(original);expect(component.status()).toContain('Conserva tu edición local');
+  });
   it('CU9 muestra la opción para generar backend Spring Boot y abre su configuración', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Generar Backend');
@@ -63,8 +101,28 @@ describe('UmlClassDiagramComponent', () => {
     await component.copyInvitation();
 
     expect(copy).toHaveBeenCalledWith('copy');
-    expect(component.notice()).toEqual({ kind: 'success', text: 'Enlace de invitación copiado.' });
+    expect(component.invitationCopyNotice()).toEqual({ kind: 'success', text: 'Enlace de invitación copiado.' });
     expect(document.querySelector('textarea')).toBeNull();
+  });
+
+  it('confirma la copia dentro del cuadro de invitación y limpia el mensaje al reabrirlo', async () => {
+    component.collaborativeSession.set({ sessionId: 's1', projectId: 'project-test', projectName: 'Prueba', inviteCode: 'ABC123', model: component.model() });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    component.openShare();
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('.invite-field button').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith(component.invitationLink());
+    expect(fixture.nativeElement.querySelector('.collaboration-modal [role="status"]').textContent)
+      .toContain('Enlace de invitación copiado.');
+
+    component.collaborationModal.set(false);
+    component.openShare();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.collaboration-modal [role="status"]').textContent.trim()).toBe('');
   });
 
   it('crea una clase y la selecciona', () => {

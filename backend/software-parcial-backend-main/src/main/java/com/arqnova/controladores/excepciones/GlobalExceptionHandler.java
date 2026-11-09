@@ -24,6 +24,10 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(AiMemoryUnavailableException.class)
+    public ResponseEntity<ApiResponse<Void>> aiMemoryUnavailable(AiMemoryUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(ApiResponse.error(ex.getMessage()));
+    }
 
     @ExceptionHandler(AuthenticationRequiredException.class)
     public ResponseEntity<ApiResponse<Void>> handleAuthenticationRequired(AuthenticationRequiredException ex) {

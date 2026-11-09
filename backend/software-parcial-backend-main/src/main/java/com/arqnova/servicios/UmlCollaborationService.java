@@ -28,6 +28,8 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
     private final ProjectUseCase projects;
     private final UmlDiagramDataPort diagrams;
     private final UmlCollaborationActivityDataPort activities;
+    private final com.arqnova.servicios.puertos.entrada.ProjectPushUseCase push;
+    public UmlCollaborationService(com.arqnova.servicios.puertos.salida.GraphDataPort graph,CollaborationSessionStore sessions,ProjectUseCase projects,com.arqnova.servicios.puertos.salida.UmlDiagramDataPort diagrams,UmlCollaborationActivityDataPort activities){this(graph,sessions,projects,diagrams,activities,null);}
 
     public UmlSessionResponse start(CreateUmlSessionRequest request, String username) {
         projects.requireAccess(request.getProjectId(), username, ProjectMemberRole.OWNER);
@@ -70,7 +72,10 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
     public synchronized void apply(UmlCollaborationEvent event) {
         if (event.getType() == null || event.getType().startsWith("participant:") || event.getType().startsWith("session:")) return;
         UmlCollaborationSession session = requireSession(event.getSessionId(), event.getProjectId());
-        Map<String, Object> model = canonicalModel(session.getProjectId(), session.getModel());
+        // Read the canonical model under the same row lock used by server-side AI batches.
+        var diagram = diagrams.findByProjectIdForUpdate(session.getProjectId())
+                .orElseThrow(() -> new IllegalArgumentException("El proyecto no tiene un diagrama UML canónico"));
+        Map<String, Object> model = deepCopy(diagram.getModel());
         List<Map<String, Object>> classes = (List<Map<String, Object>>) model.computeIfAbsent("classes", key -> new ArrayList<>());
         List<Map<String, Object>> relations = (List<Map<String, Object>>) model.computeIfAbsent("relations", key -> new ArrayList<>());
         Map<String, Object> element = event.getData() == null ? null : (Map<String, Object>) event.getData().get("element");
@@ -92,8 +97,6 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
         model.put("updatedAt", LocalDateTime.now().toString());
         session.setModel(model); // snapshot transitorio; el modelo canónico permanece en uml_diagrams
         session.setUpdatedAt(LocalDateTime.now());
-        var diagram = diagrams.findByProjectIdForUpdate(session.getProjectId())
-                .orElseThrow(() -> new IllegalArgumentException("El proyecto no tiene un diagrama UML canónico"));
         diagram.setModel(model);
         diagram.setModelVersion(diagram.getModelVersion() + 1);
         diagrams.save(diagram);
@@ -110,6 +113,8 @@ public class UmlCollaborationService implements com.arqnova.servicios.puertos.en
                 .elementId(event.getElementId()).elementType(event.getElementType()).operation(event.getOperation())
                 .eventData(event.getData()).occurredAt(LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault()))
                 .build());
+        if(push!=null&&!event.getType().startsWith("session:")&&!event.getType().endsWith(":move"))
+            push.notifyChange(new com.arqnova.modelo.ia.ProjectPush.Event("human-"+event.getEventId(),event.getProjectId(),"ArqNova: cambios en el proyecto",event.getUserName()+" "+event.getOperation()));
     }
 
     public List<UmlCollaborationEvent> activities(String sessionId, String username) {

@@ -48,3 +48,5 @@
   .toolbar .ai-toolbar-button span { display: inline; }
   .ai-panel { top: auto; right: auto; bottom: auto; margin: 8px; width: calc(100% - 16px); }
 }
+
+.invite-feedback:not(:empty){margin-top:10px;color:#166534;font-size:12px;font-weight:700}

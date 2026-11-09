@@ -23,6 +23,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final TokenValidationUseCase authTokenService;
     private final com.arqnova.servicios.puertos.entrada.UserQueryUseCase usuarioRepository;
+    private final com.arqnova.servicios.puertos.entrada.ProjectUseCase projects;
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
@@ -53,6 +54,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 }
                 if (accessor.getUser() == null && !StompCommand.DISCONNECT.equals(accessor.getCommand())) {
                     throw new MessagingException("Sesión WebSocket no autenticada");
+                }
+                if(StompCommand.SUBSCRIBE.equals(accessor.getCommand())&&accessor.getDestination()!=null&&accessor.getDestination().startsWith("/topic/ai/")){
+                    projects.requireAccess(accessor.getDestination().substring("/topic/ai/".length()),accessor.getUser().getName());
                 }
                 return message;
             }

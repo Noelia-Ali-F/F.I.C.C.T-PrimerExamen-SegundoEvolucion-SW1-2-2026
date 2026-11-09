@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "496657685592",
+    "project_id": "arqnova-segundo-examen",
+    "storage_bucket": "arqnova-segundo-examen.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:496657685592:android:5c1013f63a305bbbd5fe2d",
+        "android_client_info": {
+          "package_name": "com.arqnova.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCP_Kxl41tZVwrHhF3O70ZRvBDjEyz_enc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
