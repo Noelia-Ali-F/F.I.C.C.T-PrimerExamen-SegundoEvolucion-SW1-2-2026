@@ -56,7 +56,9 @@ public class JpaAiModelMutationAdapter implements AiModelMutationPort {
                 }
                 for(var element:elements)if(locks.find(session.getId(),element.type(),element.id()).isPresent())throw new DuplicateResourceException("Hay un elemento en edición. Finaliza esa edición antes de modelar con IA");
             });
+            var before=diagram.getModel();
             var saved=projects.saveDiagram(diagram.getId(),turn.projectId(),plan.model(),context.diagramVersion());
+            projects.recordAiChanges(turn.projectId(),before,plan.model(),turn.authorId(),turn.requestId(),answer.provider());
             try{jdbc.update("INSERT INTO ai_model_mutation_receipts(project_id,request_id,author_id,instruction,answer,diagram_version) VALUES(?,?,?,?,CAST(? AS JSONB),?)",
                     turn.projectId(),turn.requestId(),turn.authorId(),turn.instruction(),json.writeValueAsString(answer),saved.getModelVersion());}
             catch(com.fasterxml.jackson.core.JsonProcessingException e){throw new IllegalArgumentException("Respuesta UML inválida",e);}

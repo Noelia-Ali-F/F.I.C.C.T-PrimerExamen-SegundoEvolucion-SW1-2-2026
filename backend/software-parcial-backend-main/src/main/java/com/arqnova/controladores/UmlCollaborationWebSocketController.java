@@ -74,6 +74,7 @@ public class UmlCollaborationWebSocketController {
             return;
         }
         try {
+            synchronized(lockService){
             projects.requireAccess(event.getProjectId(), username, ProjectMemberRole.OWNER, ProjectMemberRole.EDITOR);
             if (requiresLock(event.getType())) {
                 String requiredType = requiredElementType(event.getType());
@@ -84,6 +85,7 @@ public class UmlCollaborationWebSocketController {
             }
             service.apply(event);
             messaging.convertAndSend(topic(sessionId), event);
+            }
         } catch (UnauthorizedActionException exception) {
             var owner = lockService.find(sessionId, event.getElementType(), event.getElementId()).orElse(null);
             messaging.convertAndSend(topic(sessionId), lockEvent("lock:denied", event, owner,

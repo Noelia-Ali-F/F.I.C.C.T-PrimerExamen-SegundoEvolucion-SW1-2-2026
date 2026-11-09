@@ -35,6 +35,8 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
     private final UmlDiagramDataPort diagramRepository;
     private final UserDataPort userRepository;
     private final UmlCollaborationActivityDataPort activities;
+    private final com.arqnova.servicios.puertos.entrada.ElementLockUseCase locks;
+    private final com.arqnova.servicios.puertos.salida.CollaborationSessionStore sessions;
 
     public ProjectEntity createProject(String id, String name, String description, String ownerUserId) {
         requireText(id, "projectId");
@@ -113,6 +115,14 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
         requireAccess(projectId, actor, ProjectMemberRole.OWNER, ProjectMemberRole.EDITOR);
         var previous = diagramRepository.findByProjectIdForUpdate(projectId)
                 .map(UmlDiagramEntity::getModel).orElse(Map.of());
+        var planner=new com.arqnova.servicios.impl.UmlMutationPlanner();
+        planner.validate(model);
+        var affected=planner.affected(previous,model);
+        sessions.findActiveByProjectId(projectId).ifPresent(session->{
+            for(var element:affected)locks.find(session.getId(),element.type(),element.id()).ifPresent(lock->{
+                if(!actor.equals(lock.userId()))throw new DuplicateResourceException("Hay un elemento afectado en edición por otro usuario");
+            });
+        });
         var saved = saveDiagram(diagramId, projectId, model, expectedVersion);
         String name = userRepository.findByUsernameIgnoreCase(actor).map(user -> user.getFullName())
                 .filter(value -> !value.isBlank()).orElse(actor);
@@ -134,6 +144,22 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
 
     private void recordChanges(String projectId, String actor, String name, LocalDateTime at,
                                String type, Object before, Object after) {
+        recordChanges(projectId,actor,name,at,type,before,after,Map.of("origin","REST"));
+    }
+    @Override public void recordAiChanges(String projectId,Map<String,Object> before,Map<String,Object> after,String actor,String requestId,String provider){
+        requireAccess(projectId,actor,ProjectMemberRole.OWNER,ProjectMemberRole.EDITOR);
+        String name=userRepository.findByUsernameIgnoreCase(actor).map(user->user.getFullName()).filter(value->value!=null&&!value.isBlank()).orElse(actor);
+        var at=LocalDateTime.now();var metadata=Map.<String,Object>of("origin","AI","executor","AI","requestId",requestId,"provider",provider==null?"UNKNOWN":provider);
+        recordChanges(projectId,actor,name,at,"class",before.get("classes"),after.get("classes"),metadata);
+        recordChanges(projectId,actor,name,at,"relation",before.get("relations"),after.get("relations"),metadata);
+        var b=indexElements(before.get("classes"));var a=indexElements(after.get("classes"));var ids=new LinkedHashSet<>(b.keySet());ids.addAll(a.keySet());
+        for(String id:ids){var extra=new LinkedHashMap<>(metadata);extra.put("classId",id);
+            for(String type:List.of("attribute","method")){String key=type.equals("attribute")?"attributes":"methods";
+                recordChanges(projectId,actor,name,at,type,b.getOrDefault(id,Map.of()).get(key),a.getOrDefault(id,Map.of()).get(key),extra);
+            }
+        }
+    }
+    private void recordChanges(String projectId,String actor,String name,LocalDateTime at,String type,Object before,Object after,Map<String,Object> metadata) {
         var previous = indexElements(before);
         var current = indexElements(after);
         var ids = new LinkedHashSet<>(previous.keySet());
@@ -145,15 +171,15 @@ public class UmlProjectPersistenceService implements com.arqnova.servicios.puert
             String action = old == null ? "create" : next == null ? "delete" : "update";
             var element = next == null ? old : next;
             Object label = element.get(type.equals("relation") ? "label" : "name");
-            var data = new LinkedHashMap<String,Object>();
-            data.put("origin", "REST");
+            var data = new LinkedHashMap<String,Object>(metadata);
             if (label instanceof String text && !text.isBlank()) data.put("elementName", text.substring(0, Math.min(120, text.length())));
             String operation = switch (action) {
                 case "create" -> "Creó";
                 case "delete" -> "Eliminó";
                 default -> "Actualizó";
             };
-            activities.save(UmlCollaborationActivityEntity.builder().eventId(UUID.randomUUID().toString())
+            String eventId=metadata.containsKey("requestId")?UUID.nameUUIDFromBytes((projectId+"|"+metadata.get("requestId")+"|"+metadata.getOrDefault("classId","")+"|"+type+"|"+id+"|"+action).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString():UUID.randomUUID().toString();
+            activities.save(UmlCollaborationActivityEntity.builder().eventId(eventId)
                     .projectId(projectId).userId(actor).userName(name.substring(0, Math.min(180, name.length())))
                     .occurredAt(at).elementId(id).elementType(type).eventType(type + ":" + action)
                     .operation(operation + switch (type) { case "class" -> " una clase"; case "attribute" -> " un atributo"; case "method" -> " un método"; default -> " una relación"; })

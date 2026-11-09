@@ -32,6 +32,19 @@ public class UmlAiCommandServiceImpl implements UmlAiCommandService {
 
     @Override
     public UmlAiCommandResponse interpret(UmlAiCommandRequest request) {
+        var result=interpretUnchecked(request);
+        if("READY".equals(result.getStatus())){
+            var operations=result.getOperations();
+            if(operations==null||operations.isEmpty())operations=List.of(UmlAiOperationResponse.builder()
+                    .type(result.getOperation()).targetId(result.getTargetId()).parameters(result.getParameters()).build());
+            try {new UmlMutationPlanner().plan(request.getModel(),operations,"preview-"+UUID.randomUUID());}
+            catch(IllegalArgumentException invalid){return error(invalid.getMessage()+". No se aplicó el lote.");}
+        }
+        return result;
+    }
+    private UmlAiCommandResponse interpretUnchecked(UmlAiCommandRequest request) {
+        if(UmlModelingIntent.needsClarification(request.getInstruction()))
+            return completeFallback(clarification("Indica una única instrucción concreta y confirma si deseas aplicarla ahora. No se realizaron cambios."));
         UmlAiCommandResponse singleClass = interpretSingleClassCreation(request);
         if (singleClass != null) return singleClass;
         UmlAiCommandResponse batchCreation = interpretBatchCreation(request);

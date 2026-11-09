@@ -19,7 +19,7 @@ describe('UmlClassDiagramComponent', () => {
 
   beforeEach(async () => {
     localStorage.clear();
-    localStorage.setItem('uml-projects-v1', JSON.stringify([{ id: 'project-test', name: 'Prueba', description: '', status: 'EN_EDICION', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), model: DEFAULT_UML_MODEL }]));
+    localStorage.setItem('uml-projects-v1', JSON.stringify([{ id: 'project-test', memberRole: 'OWNER', name: 'Prueba', description: '', status: 'EN_EDICION', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), model: DEFAULT_UML_MODEL }]));
     await TestBed.configureTestingModule({
       imports: [UmlClassDiagramComponent],
       providers: [
@@ -29,8 +29,11 @@ describe('UmlClassDiagramComponent', () => {
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: (key: string) => key === 'projectId' ? 'project-test' : null }, queryParamMap: { get: () => null } } } }
       ]
     }).compileComponents();
+    vi.spyOn(TestBed.inject(UmlProjectStoreService),'get').mockReturnValue(new Subject<any>());
     fixture = TestBed.createComponent(UmlClassDiagramComponent);
     component = fixture.componentInstance;
+    component.editingAllowed.set(true);
+    vi.mocked(TestBed.inject(UmlProjectStoreService).get).mockClear();
     component.model.set({ format: 'uml-class-diagram', version: 2, title: 'Prueba', classes: [], relations: [] });
   });
 
@@ -887,6 +890,34 @@ describe('UmlClassDiagramComponent', () => {
     fixture.detectChanges();
     const relation = fixture.nativeElement.querySelector('svg.relations g.relation') as SVGGElement;
     expect([...relation.querySelectorAll('text.multiplicity')].map(item => item.textContent?.trim())).toEqual(['1', '1..*']);
+  });
+
+  it('no aplica ni guarda un prefijo de lote IA inválido y no publica eventos parciales',()=>{
+    const original=component.model(),save=vi.spyOn(TestBed.inject(UmlProjectStoreService),'saveModel');
+    const publish=vi.spyOn((component as any).collaboration,'publish');
+    (component as any).executeAiCommands([
+      {status:'READY',operation:'CLASS_CREATE',parameters:{id:'nuevo',name:'Nueva'}},
+      {status:'READY',operation:'ATTRIBUTE_CREATE',parameters:{classId:'missing',name:'email'}}
+    ],0,vi.fn());
+    expect(component.model()).toBe(original);expect(save).not.toHaveBeenCalled();expect(publish).not.toHaveBeenCalled();
+    expect(component.aiResult()?.kind).toBe('error');
+  });
+  it('impide IA, edición manual, guardado y arrastre local para VIEWER',()=>{
+    component.editingAllowed.set(false);const original=component.model();
+    const interpret=vi.spyOn((component as any).umlAi,'interpret');
+    const save=vi.spyOn(TestBed.inject(UmlProjectStoreService),'saveModel');
+    component.newClassName='NoPermitida';component.addClass();component.aiInstruction.set('Crea NoPermitida');component.sendAiInstruction();component.saveProject();
+    expect(component.model()).toBe(original);expect(interpret).not.toHaveBeenCalled();expect(save).not.toHaveBeenCalled();
+  });
+  it('no anuncia éxito IA hasta confirmar el guardado completo del servidor',()=>{
+    const response=new Subject<any>();
+    vi.spyOn(TestBed.inject(UmlProjectStoreService),'saveModel').mockReturnValue(response);
+    vi.spyOn((component as any).umlAi,'interpret').mockReturnValue(of({status:'READY',operation:'CLASS_CREATE',parameters:{name:'Nueva'},message:'Nueva creada'}));
+    component.aiInstruction.set('Crea una clase Nueva');component.sendAiInstruction();
+    expect(component.aiResult()?.kind).toBe('clarification');
+    (component as any).flushPersist();
+    response.next({modelVersion:1,model:component.model(),updatedAt:new Date().toISOString()});
+    expect(component.aiResult()?.kind).toBe('success');expect(component.aiResult()?.text).toContain('guardados');
   });
 
   it('muestra ayuda flotante descriptiva en las acciones principales de la barra', () => {

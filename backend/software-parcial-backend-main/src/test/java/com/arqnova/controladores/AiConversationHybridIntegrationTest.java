@@ -185,6 +185,42 @@ class AiConversationHybridIntegrationTest {
             assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(2);assertThat(mutations.find(modelTurn("model-006"))).isEmpty();
         }finally{locks.releaseBySocket("manual-test-socket");}
     }
+    @Test void groupAuditCommitsWithModelAndReceiptAndDoesNotDuplicateOnReplay(){
+        var turn=modelTurn("audit-group-001");var context=modelContext(1);
+        mutations.apply(turn,context,createAnswer());mutations.apply(turn,context,createAnswer());
+        var rows=activityData.projectHistory(project,null,null,20);
+        assertThat(rows).singleElement().satisfies(row->{
+            assertThat(row.getUserId()).isEqualTo(username);assertThat(row.getOccurredAt()).isNotNull();
+            assertThat(row.getEventType()).isEqualTo("class:create");assertThat(row.getElementId()).isEqualTo("cliente");
+            assertThat(row.getEventData()).containsEntry("origin","AI").containsEntry("executor","AI").containsEntry("requestId","audit-group-001").containsEntry("provider","FAKE");
+        });
+    }
+    @Test void rollbackRemovesAuditReceiptAndWholeGroupModel(){
+        var turn=modelTurn("audit-rollback");
+        assertThatThrownBy(()->new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status->{
+            mutations.apply(turn,modelContext(1),createAnswer());throw new IllegalStateException("simulated commit failure");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(activityData.projectHistory(project,null,null,20)).isEmpty();
+        assertThat(mutations.find(turn)).isEmpty();assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModelVersion()).isEqualTo(1);
+    }
+    @Test void blockedCollateralRelationPreventsGroupCascadeAndRestBatch(){
+        var nodes=List.of(Map.of("id","a","name","A"),Map.of("id","b","name","B"),Map.of("id","c","name","Detalle"),Map.of("id","d","name","D"));
+        var graph=Map.<String,Object>of("classes",nodes,"relations",List.of(
+            Map.of("id","r1","sourceId","a","targetId","b","type","association","sourceMultiplicity","*","targetMultiplicity","*","associationClassId","c"),
+            Map.of("id","r2","sourceId","c","targetId","d","type","association","sourceMultiplicity","1","targetMultiplicity","1")));
+        projects.saveDiagram("diagram-"+project,project,graph,1);
+        String sessionId=UUID.randomUUID().toString();var now=java.time.LocalDateTime.now();
+        sessions.save(UmlCollaborationSession.builder().id(sessionId).projectId(project).inviteCode(UUID.randomUUID().toString().substring(0,10)).createdBy(username).active(true).model(graph).createdAt(now).updatedAt(now).build());
+        locks.acquire(project,sessionId,"r2","relation","another-editor","Another","cascade-socket");
+        var answer=new Answer("Delete",List.of(),"FAKE","test",List.of(UmlAiOperationResponse.builder().type("CLASS_DELETE").targetId("a").parameters(Map.of()).build()));
+        try{
+            assertThatThrownBy(()->mutations.apply(modelTurn("audit-cascade"),modelContext(2),answer)).isInstanceOf(DuplicateResourceException.class);
+            var plan=new com.arqnova.servicios.impl.UmlMutationPlanner().plan(graph,answer.operations(),"audit-rest-cascade");
+            assertThatThrownBy(()->projects.saveDiagramFromRest("diagram-"+project,project,plan.model(),2,username)).isInstanceOf(DuplicateResourceException.class);
+            assertThat(projects.findDiagramByProjectId(project).orElseThrow().getModel()).isEqualTo(graph);
+            assertThat(mutations.find(modelTurn("audit-cascade"))).isEmpty();assertThat(activityData.projectHistory(project,null,null,20)).isEmpty();
+        }finally{locks.releaseBySocket("cascade-socket");}
+    }
     @Test void restSaveRecordsVerifiedActorAndOnlyCommittedChanges() throws Exception {
         String endpoint = "/api/v1/projects/" + project + "/diagram";
         String graph = "{\"classes\":[{\"id\":\"cliente\",\"name\":\"Cliente\"}],\"relations\":[],\"author\":\"fake\"}";

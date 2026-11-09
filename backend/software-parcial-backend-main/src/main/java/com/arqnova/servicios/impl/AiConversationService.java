@@ -229,7 +229,7 @@ public final class AiConversationService implements AiConversationUseCase {
         }
     }
     private boolean explicitModeling(String instruction) {
-        return !UNCERTAIN_MODELING.matcher(instruction).find()
+        return !UmlModelingIntent.needsClarification(instruction) && !UNCERTAIN_MODELING.matcher(instruction).find()
                 && (POLITE_MODELING.matcher(instruction).matches()
                     || (instruction.indexOf('?') < 0 && instruction.indexOf('¿') < 0
                         && DIRECT_MODELING.matcher(instruction).find()));

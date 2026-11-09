@@ -168,7 +168,7 @@ class AiConversationServiceTest {
         when(mutations.enabled()).thenReturn(true);
         service = new AiConversationService(memory, provider, events::add, queue::add, projects, users, clock, mutations);
         var ambiguous = List.of("¿Crees que conviene eliminar Cliente?", "Yo sugiero crear Cliente",
-                "Crea algo", "Borra Cliente si te parece", "Cliente y Venta", "Crea Cliente. ¿Conviene quitar Venta?");
+                "Crea algo", "Borra Cliente si te parece", "Cliente y Venta", "Crea Cliente. ¿Conviene quitar Venta?", "Crea Cliente o Proveedor", "Crea Cliente pero no lo hagas todavía", "Agrega email a Cliente si consideras adecuado");
         for (int i = 0; i < ambiguous.size(); i++) {
             var id = "unclear-" + i;
             service.send("p", "a", id, Mode.MODEL, ambiguous.get(i));

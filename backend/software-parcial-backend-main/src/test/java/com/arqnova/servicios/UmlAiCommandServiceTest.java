@@ -12,6 +12,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UmlAiCommandServiceTest {
     private final UmlAiCommandServiceImpl service = new UmlAiCommandServiceImpl();
 
+    @Test void ambiguousAlternativesAndNegationNeverReachLegacyProvider(){
+        var provider=org.mockito.Mockito.mock(com.arqnova.servicios.puertos.salida.UmlInterpretationPort.class);
+        var guarded=new UmlAiCommandServiceImpl(provider);
+        for(String instruction:List.of("Crea una clase Cliente o Proveedor","Crea una clase Factura pero no lo hagas todavía","Agrega email a Cliente si consideras adecuado")){
+            var result=guarded.interpret(new UmlAiCommandRequest(instruction,model()));
+            assertThat(result.getStatus()).isEqualTo("CLARIFICATION");assertThat(result.getOperations()).isNullOrEmpty();
+        }
+        org.mockito.Mockito.verifyNoInteractions(provider);
+    }
+
     private Map<String, Object> model() {
         return Map.of("classes", List.of(
                 Map.of("id", "cliente", "name", "Cliente", "attributes", List.of(
